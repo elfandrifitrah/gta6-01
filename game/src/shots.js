@@ -1,79 +1,88 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// Screenshot staging behind ?shot=<name>. Each shot drives the real game
+// into an interesting state through the same APIs a player uses — entering
+// a car, raising heat, starting a mission — then frames a fixed camera.
+// Nothing is faked: the traffic, police, enemies and HUD are all live, and
+// the capture script waits for window.__shotReady before shooting the frame.
+import { Car } from './vehicles.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+// title: the title screen over a slow orbit of the monument square.
+function stageTitle(game) {
+  game.titleAngle = 0.8;
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
-  }
-  return best;
+// chase: Bimo fleeing north up Jl. Sudirman in a red coupe, four stars.
+// A fixed camera north of the action looks south: the coupe approaches
+// head-on with two pursuers closing behind it, towers and the busway
+// framing the corridor.
+function stageChase(game) {
+  // Head-on pursuit: the camera sits north of the action looking south
+  // down Jl. Sudirman (yaw PI puts the camera on the north side). The
+  // player coasts north from speed 18 and lands near the camera target.
+  // The patrol cars are staged as static pursuit cars on the busway lane
+  // just behind the coupe, so the AI cannot rear-end it during the
+  // warmup and stall the formation out of frame. Their light bars are
+  // frozen mid-flash, one red and one blue.
+  const car = new Car(game.scene, {
+    x: 21.8, z: 67, heading: Math.PI, color: 0xc23a2e, kind: 'coupe', driver: null, owned: true,
+  });
+  game.addCar(car);
+  game.enterCar(car);
+  car.speed = 18;
+  game.setHeat(68);
+  const bars = [0.2, 0.55];
+  // East in the busway lane: 5+ m clear of the coupe's path, so the
+  // pairwise collision pass never shoves the rolling coupe.
+  [[27, 52], [28, 58]].forEach(([x, z], i) => {
+    const cop = new Car(game.scene, {
+      x, z, heading: Math.PI, color: 0x1f3a6e, kind: 'sedan', driver: 'police', police: true,
+    });
+    cop.sirenPhase = bars[i];
+    cop.syncMesh();
+    game.addCar(cop);
+  });
+  game.shotCamera = {
+    target: { x: 22, y: 2, z: 45 },
+    yaw: Math.PI,
+    pitch: -0.16,
+    distance: 20,
+  };
+  game.hud.message('Four stars. Lose the police on Jl. Sudirman.', 6);
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
-  }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+// fight: the Kopor Hilang job at the warehouse yard, mid-gunfight. The
+// mission starts honestly (Macet Total is marked done first), Bimo walks
+// into the yard, and the Kalongs open fire.
+function stageFight(game) {
+  game.missions.applySave(['macet'], false);
+  game.missions.startAvailable();
+  game.teleportPlayer(104, 20, Math.PI);
+  game.shotCamera = {
+    target: { x: 104, y: 1.6, z: 12 },
+    yaw: 0.32,
+    pitch: -0.12,
+    distance: 19,
+  };
+}
+
+// vista: a high camera south of the square looking north: the whole
+// monument and plaza in the foreground, the roundabout and the skyscraper
+// corridor behind it, with the HUD and minimap visible.
+function stageVista(game) {
+  game.teleportPlayer(0, 18, Math.PI * 0.75);
+  game.shotCamera = {
+    target: { x: -5, y: 18, z: -5 },
+    yaw: 2.6,
+    pitch: -0.42,
+    distance: 75,
+  };
+  game.hud.message('Jakarta, golden hour. The debt is $5,000. The city is open.', 6);
+}
+
+export function stageShot(game, name) {
+  if (name === 'title') stageTitle(game);
+  else if (name === 'chase') stageChase(game);
+  else if (name === 'fight') stageFight(game);
+  else if (name === 'vista') stageVista(game);
+  else stageVista(game);
+  return name;
 }
