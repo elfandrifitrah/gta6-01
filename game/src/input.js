@@ -1,5 +1,5 @@
-// Keyboard and mouse state. The game loop reads held keys every frame and
-// edge-triggered presses through pressed(), which the loop clears each frame
+// Keyboard and mouse state. The loop reads held keys each frame and
+// edge-triggered presses through pressed(), which it clears every frame
 // with endFrame(). Right-drag orbits the camera; the wheel zooms it.
 export class Input {
   constructor(canvas) {
