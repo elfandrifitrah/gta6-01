@@ -1,301 +1,328 @@
-// Jakarta Heat's city: a procedural Jakarta built from one seed. A wide Sudirman-style
-// avenue runs north to south, a monument plaza anchors the north, kampung alleys fill the
-// south-west, and a working port with water closes the east edge.
+// Jakarta Heat's city: roads, blocks, buildings, props, traffic routes and the
+// mission landmarks, all generated from one seeded stream so the same seed
+// always builds the same Jakarta. Coordinates are world units; the world is
+// 2600 wide and 2000 tall, north is up (smaller y).
 
-import { BUILDING_COLORS, PALETTE, SIGN_TEXTS, TOWER_COLORS, WORLD } from './config.js';
+import { WORLD, PALETTE, SIGN_TEXTS } from './config.js';
 import { createRng } from './rng.js';
 
-const ROAD_COORDS = [-180, -120, -60, 0, 60, 120, 180];
-const PLAZA = { x0: -42, x1: 42, z0: -172, z1: -128 };
+const PLAZA = { x: 760, y: 690, r: 250 };
+const WATER_Y = 1900;
 
-function halfAt(coord) { return coord === WORLD.avenueX ? WORLD.avenueHalf : WORLD.roadHalf; }
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
 
-function isKampung(cx, cz) { return cx < -30 && cz > 30; }
-function isTowerBlock(cx, cz) { return Math.abs(cx) === 30 && cz >= -90 && cz <= 90; }
+function circleHitsRect(cx, cy, r, rect) {
+  const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+  const ny = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+  return (cx - nx) * (cx - nx) + (cy - ny) * (cy - ny) < r * r;
+}
 
-export function generateCity(seed) {
+export function buildCity(seed) {
   const rng = createRng(seed);
+
+  // Roads: avenues run north-south, streets east-west, alleys thread the kampung.
+  const roads = [
+    { x1: 520, y1: 0, x2: 520, y2: 2000, w: 84, name: 'Jl. Hayam Wuruk', kind: 'avenue' },
+    { x1: 1300, y1: 0, x2: 1300, y2: 2000, w: 128, name: 'Jl. Sudirman', kind: 'avenue' },
+    { x1: 2080, y1: 0, x2: 2080, y2: 2000, w: 84, name: 'Jl. Raya Kampung', kind: 'avenue' },
+    { x1: 0, y1: 360, x2: 2600, y2: 360, w: 72, name: 'Jl. Thamrin', kind: 'street' },
+    { x1: 0, y1: 1000, x2: 2600, y2: 1000, w: 72, name: 'Jl. Merdeka', kind: 'street' },
+    { x1: 0, y1: 1640, x2: 2600, y2: 1640, w: 96, name: 'Jl. Pelabuhan', kind: 'street' },
+    { x1: 300, y1: 1740, x2: 2500, y2: 1740, w: 64, name: 'Jl. Dermaga', kind: 'street' },
+    { x1: 1850, y1: 80, x2: 1850, y2: 940, w: 36, name: 'Gg. Melati', kind: 'alley' },
+    { x1: 2280, y1: 80, x2: 2280, y2: 940, w: 36, name: 'Gg. Kenanga', kind: 'alley' },
+    { x1: 1700, y1: 560, x2: 2520, y2: 560, w: 36, name: 'Gg. Mawar', kind: 'alley' },
+    { x1: 1700, y1: 800, x2: 2520, y2: 800, w: 36, name: 'Gg. Flamboyan', kind: 'alley' },
+  ];
+
+  const colliders = [];
   const buildings = [];
   const props = [];
-  const signs = [];
-  const ground = [];
-  const colliders = [];
-  const skyline = [];
 
-  function addCollider(x, z, w, d) {
-    colliders.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
-  }
-  function addBuilding(x, z, w, d, h, color, kind) {
-    const b = { x, z, w, d, h, color, kind, winSeed: rng.int(0, 9999), lit: rng.chance(0.5) };
-    buildings.push(b);
-    addCollider(x, z, w, d);
-    return b;
-  }
-
-  // Ground: dirt base, water, roads, port concrete, sidewalks, plaza paving.
-  ground.push({ pts: [[-260, -260], [260, -260], [260, 260], [-260, 260]], y: -0.06, color: PALETTE.grass, kind: 'base' });
-  ground.push({ pts: [[WORLD.waterX, -260], [300, -260], [300, 260], [WORLD.waterX, 260]], y: -0.02, color: PALETTE.water, kind: 'water' });
-  for (const c of ROAD_COORDS) {
-    const h = halfAt(c);
-    ground.push({ pts: [[c - h, -240], [c + h, -240], [c + h, 240], [c - h, 240]], y: 0.02, color: PALETTE.road, kind: 'road' });
-    ground.push({ pts: [[-240, c - WORLD.roadHalf], [240, c - WORLD.roadHalf], [240, c + WORLD.roadHalf], [-240, c + WORLD.roadHalf]], y: 0.02, color: PALETTE.road, kind: 'road' });
-  }
-  ground.push({ pts: [[180, -240], [WORLD.waterX, -240], [WORLD.waterX, 240], [180, 240]], y: 0.06, color: PALETTE.port, kind: 'port' });
-  ground.push({ pts: [[PLAZA.x0, PLAZA.z0], [PLAZA.x1, PLAZA.z0], [PLAZA.x1, PLAZA.z1], [PLAZA.x0, PLAZA.z1]], y: 0.12, color: PALETTE.plaza, kind: 'plaza' });
-  ground.push({ pts: [[-30, -162], [30, -162], [30, -138], [-30, -138]], y: 0.14, color: [188, 166, 138], kind: 'plaza' });
-  ground.push({ pts: [[-14, -158], [14, -158], [14, -142], [-14, -142]], y: 0.16, color: [204, 182, 152], kind: 'plaza' });
-
-  // Lane dashes on the avenue and the cross streets.
-  for (let z = -110; z < 240; z += 9) {
-    ground.push({ pts: [[-0.35, z], [0.35, z], [0.35, z + 3.4], [-0.35, z + 3.4]], y: 0.04, color: PALETTE.roadLine, kind: 'dash' });
-  }
-  for (const c of [-120, 0, 120]) {
-    for (let x = -230; x < 180; x += 9) {
-      ground.push({ pts: [[x, c - 0.35], [x + 3.4, c - 0.35], [x + 3.4, c + 0.35], [x, c + 0.35]], y: 0.04, color: PALETTE.roadLine, kind: 'dash' });
-    }
-  }
-
-  // Blocks between the roads.
-  for (let i = 0; i < ROAD_COORDS.length - 1; i += 1) {
-    for (let j = 0; j < ROAD_COORDS.length - 1; j += 1) {
-      const x0 = ROAD_COORDS[i] + halfAt(ROAD_COORDS[i]);
-      const x1 = ROAD_COORDS[i + 1] - halfAt(ROAD_COORDS[i + 1]);
-      const z0 = ROAD_COORDS[j] + WORLD.roadHalf;
-      const z1 = ROAD_COORDS[j + 1] - WORLD.roadHalf;
-      const cx = (x0 + x1) / 2;
-      const cz = (z0 + z1) / 2;
-      if (cx > -45 && cx < 45 && cz > -175 && cz < -125) continue; // the plaza stays open
-      ground.push({ pts: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], y: 0.1, color: PALETTE.sidewalk, kind: 'walk' });
-      const bw = x1 - x0;
-      const bd = z1 - z0;
-      if (cx === -30 && cz === 30) {
-        // Bu Ratna's block: buildings only at the back, the warung corner stays open.
-        addBuilding(-40, 44, 16, 12, 12, rng.pick(BUILDING_COLORS), 'block');
-        addBuilding(-20, 42, 14, 12, 18, rng.pick(BUILDING_COLORS), 'block');
-      } else if (cx === -150 && cz === 150) {
-        // The mission alley block: houses ring a courtyard that always stays open.
-        for (const [ox, oz] of [[16, 16], [16, -16], [-16, 16], [-16, -16], [16, 0], [-16, 0], [0, 16], [0, -16]]) {
-          addBuilding(cx + ox, cz + oz, 9, 9, rng.range(4, 7), rng.pick(BUILDING_COLORS), 'house');
-        }
-      } else if (isKampung(cx, cz)) {
-        for (let gx = 0; gx < 3; gx += 1) {
-          for (let gz = 0; gz < 3; gz += 1) {
-            if (rng.chance(0.14)) continue;
-            const hx = x0 + 4 + gx * ((bw - 8) / 3) + rng.range(-1, 1);
-            const hz = z0 + 4 + gz * ((bd - 8) / 3) + rng.range(-1, 1);
-            addBuilding(hx, hz, rng.range(7, 10), rng.range(7, 10), rng.range(3.5, 7), rng.pick(BUILDING_COLORS), 'house');
-          }
-        }
-        if (rng.chance(0.7)) {
-          const sx = x0 + rng.range(6, bw - 6);
-          const sz = z0 + rng.range(6, bd - 6);
-          props.push({ kind: 'stall', x: sx, z: sz, rot: rng.range(0, Math.PI * 2), sign: rng.pick(SIGN_TEXTS) });
-          addCollider(sx, sz, 4, 3);
-        }
-      } else if (isTowerBlock(cx, cz)) {
-        const n = rng.chance(0.5) ? 1 : 2;
-        for (let t = 0; t < n; t += 1) {
-          const tx = n === 1 ? cx : x0 + bw * (0.28 + 0.44 * t);
-          const tz = cz + rng.range(-6, 6);
-          addBuilding(tx, tz, rng.range(16, 22), rng.range(16, 22), rng.range(30, 62), rng.pick(TOWER_COLORS), 'tower');
-        }
-      } else {
-        const cols = rng.chance(0.5) ? 2 : 1;
-        for (let gx = 0; gx < cols; gx += 1) {
-          for (let gz = 0; gz < 2; gz += 1) {
-            const bx = x0 + bw * ((gx + 0.5) / cols) + rng.range(-2, 2);
-            const bz = z0 + bd * (gz === 0 ? 0.28 : 0.72) + rng.range(-2, 2);
-            const b = addBuilding(bx, bz, rng.range(13, 19), rng.range(11, 15), rng.range(9, 26), rng.pick(BUILDING_COLORS), 'block');
-            if (rng.chance(0.3)) {
-              const s = rng.pick(SIGN_TEXTS);
-              signs.push({ x: bx, y: rng.range(4.5, 6.5), z: bz + b.d / 2 + 0.6, w: 9, h: 2.6, text: s[0], sub: s[1], bg: [24, 22, 30], fg: [255, 214, 130] });
-            }
-          }
-        }
-      }
-      // Street trees on the block corners.
-      for (const [tx, tz] of [[x0 + 2, z0 + 2], [x1 - 2, z0 + 2], [x0 + 2, z1 - 2], [x1 - 2, z1 - 2]]) {
-        if (rng.chance(0.6)) {
-          props.push({ kind: 'tree', x: tx, z: tz, s: rng.range(0.8, 1.3), rot: rng.range(0, 6) });
-          addCollider(tx, tz, 0.8, 0.8);
-        }
-      }
-    }
-  }
-
-  // The monument: stepped base, tapering shaft, flame, flags, planters.
-  props.push({ kind: 'monument', x: 0, z: -150 });
-  addCollider(0, -150, 12, 12);
-  for (const [fx, fz] of [[-20, -160], [20, -160], [-20, -140], [20, -140]]) {
-    props.push({ kind: 'flagpole', x: fx, z: fz });
-    addCollider(fx, fz, 0.6, 0.6);
-  }
-  for (const [px, pz] of [[-30, -150], [30, -150], [-10, -166], [10, -166], [-10, -134], [10, -134]]) {
-    props.push({ kind: 'planter', x: px, z: pz });
-    addCollider(px, pz, 3, 3);
-  }
-
-  // Bu Ratna's warung, the story's home corner.
-  props.push({ kind: 'stall', x: -44, z: 14, rot: 0.6, sign: ['WARUNG BU RATNA', 'nasi goreng · kopi tubruk'] });
-  addCollider(-44, 14, 5, 4);
-  signs.push({ x: -44, y: 5.2, z: 14, w: 12, h: 3, text: 'WARUNG BU RATNA', sub: 'nasi goreng · kopi tubruk', bg: [120, 30, 26], fg: [255, 232, 180] });
-
-  // Avenue billboards.
-  const boards = [
-    [-14, -60, 'SELAMAT DATANG', 'di Jakarta'],
-    [14, 20, 'JAKARTA HEAT', 'a fictional Jakarta · 2026'],
-    [-14, 110, 'MONAS', 'Jakarta 2026'],
-    [14, -100, 'KOPI', 'kopi tubruk asli'],
-  ];
-  for (const [bx, bz, text, sub] of boards) {
-    props.push({ kind: 'billboard', x: bx, z: bz });
-    addCollider(bx, bz, 1.2, 1.2);
-    signs.push({ x: bx, y: 9, z: bz, w: 16, h: 5, text, sub, bg: [30, 26, 44], fg: [255, 214, 130] });
-  }
-
-  // Street lamps along the roads.
-  for (const c of ROAD_COORDS) {
-    for (let t = -210; t <= 210; t += 60) {
-      const lx = c + halfAt(c) + 1.2;
-      props.push({ kind: 'lamp', x: lx, z: t });
-      props.push({ kind: 'lamp', x: t, z: c + WORLD.roadHalf + 1.2 });
-    }
-  }
-
-  // The port: warehouses, container stacks, cranes, a quay wall.
-  // Three warehouses along the quay; the mission warehouse stands apart at (212, 90),
-  // so no two warehouse colliders overlap and the ledger stays reachable.
-  for (let i = 0; i < 3; i += 1) {
-    const wz = -150 + i * 90;
-    addBuilding(206, wz, 22, 34, 12, [150, 142, 128], 'warehouse');
-  }
-  addBuilding(212, 90, 24, 30, 13, [168, 120, 90], 'warehouse');
-  const containerColors = [[180, 60, 40], [40, 110, 160], [200, 140, 40], [60, 130, 80], [150, 150, 150]];
-  for (let i = 0; i < 26; i += 1) {
-    const cx = rng.range(190, 224);
-    const cz = rng.range(-170, 170);
-    if (Math.abs(cz - 90) < 24 && cx > 198) continue;
-    // Keep the mission's port points clear: gate, ledger approach, escape car.
-    if (Math.hypot(cx - 187, cz - 30) < 14) continue;
-    if (Math.hypot(cx - 212, cz - 109) < 12) continue;
-    if (Math.hypot(cx - 192, cz - 112) < 12) continue;
-    const stack = rng.int(1, 3);
-    for (let s = 0; s < stack; s += 1) {
-      props.push({ kind: 'container', x: cx, z: cz, y: s * 2.7, color: rng.pick(containerColors), rot: rng.chance(0.5) ? 0 : Math.PI / 2 });
-    }
-    addCollider(cx, cz, 7, 3.2);
-  }
-  for (const cz of [-120, -20, 80, 170]) {
-    props.push({ kind: 'crane', x: 226, z: cz });
-    addCollider(226, cz, 4, 4);
-  }
-  props.push({ kind: 'quay', x: 231, z: 0 });
-
-  // Far skyline silhouettes beyond the playable edge.
-  for (let i = 0; i < 30; i += 1) {
-    const a = (i / 30) * Math.PI * 2 + rng.range(-0.05, 0.05);
-    const r = WORLD.skylineR + rng.range(-12, 18);
-    skyline.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, w: rng.range(18, 34), h: rng.range(38, 95), d: rng.range(18, 30) });
-  }
-
-  // Road graph: intersections with neighbours, minus the avenue edge cut by the plaza.
-  const nodes = [];
-  const nodeAt = new Map();
-  for (const x of ROAD_COORDS) {
-    for (const z of ROAD_COORDS) {
-      const node = { x, z, links: [] };
-      nodes.push(node);
-      nodeAt.set(`${x},${z}`, node);
-    }
-  }
-  for (const node of nodes) {
-    for (const [dx, dz] of [[60, 0], [-60, 0], [0, 60], [0, -60]]) {
-      const other = nodeAt.get(`${node.x + dx},${node.z + dz}`);
-      if (!other) continue;
-      if (node.x === 0 && other.x === 0 && ((node.z === -180 && other.z === -120) || (node.z === -120 && other.z === -180))) continue;
-      node.links.push(other);
-    }
-  }
-
-  const places = {
-    warung: { x: -44, z: 14 },
-    playerStart: { x: -60, z: 20 },
-    missionCar: { x: -60, z: 36 },
-    plaza: { x: 0, z: -150 },
-    plazaContact: { x: 10, z: -138 },
-    kampungAlley: { x: -150, z: 150 },
-    suitcase: { x: -153, z: 153 },
-    raceStart: { x: 0, z: 80 },
-    portGate: { x: 187, z: 30 },
-    warehouse: { x: 212, z: 90 },
-    ledger: { x: 212, z: 109 },
-    escapeCar: { x: 192, z: 112 },
-    hospital: { x: 60, z: 30 },
-    policePost: { x: -60, z: -30 },
+  const xBands = [[40, 478], [562, 1236], [1364, 2038], [2122, 2560]];
+  const yBands = [[40, 324], [396, 964], [1036, 1592]];
+  const wallSets = {
+    tower: [PALETTE.wallGlass, PALETTE.wallSlate, PALETTE.wallCream],
+    block: [PALETTE.wallCream, PALETTE.wallTerra, PALETTE.wallBrick, PALETTE.wallSlate],
+    house: [PALETTE.wallCream, PALETTE.wallTerra, '#d8b98a', '#c9a0a0', '#a8b89a'],
   };
 
-  return { seed, roads: ROAD_COORDS, ground, buildings, props, signs, colliders, skyline, nodes, places };
-}
-
-/** Push a circle out of building colliders, the world edge and the water. Returns hit flag. */
-export function collideCircle(city, pos, radius) {
-  let hit = false;
-  const limit = WORLD.half - 2;
-  if (pos.x < -limit) { pos.x = -limit; hit = true; }
-  if (pos.x > WORLD.waterX - 2) { pos.x = WORLD.waterX - 2; hit = true; }
-  if (pos.z < -limit) { pos.z = -limit; hit = true; }
-  if (pos.z > limit) { pos.z = limit; hit = true; }
-  for (const c of city.colliders) {
-    const nx = Math.max(c.x0, Math.min(pos.x, c.x1));
-    const nz = Math.max(c.z0, Math.min(pos.z, c.z1));
-    const dx = pos.x - nx;
-    const dz = pos.z - nz;
-    const d2 = dx * dx + dz * dz;
-    if (d2 >= radius * radius) continue;
-    hit = true;
-    if (d2 > 0.0001) {
-      const d = Math.sqrt(d2);
-      pos.x = nx + (dx / d) * radius;
-      pos.z = nz + (dz / d) * radius;
-    } else {
-      const pushLeft = pos.x - c.x0 + radius;
-      const pushRight = c.x1 - pos.x + radius;
-      const pushUp = pos.z - c.z0 + radius;
-      const pushDown = c.z1 - pos.z + radius;
-      const m = Math.min(pushLeft, pushRight, pushUp, pushDown);
-      if (m === pushLeft) pos.x = c.x0 - radius;
-      else if (m === pushRight) pos.x = c.x1 + radius;
-      else if (m === pushUp) pos.z = c.z0 - radius;
-      else pos.z = c.z1 + radius;
+  for (const [bx0, bx1] of xBands) {
+    for (const [by0, by1] of yBands) {
+      const kampung = bx0 >= 1700 && by1 <= 964;
+      const nearPlaza = bx0 < PLAZA.x + PLAZA.r && bx1 > PLAZA.x - PLAZA.r && by0 < PLAZA.y + PLAZA.r && by1 > PLAZA.y - PLAZA.r;
+      const cols = kampung ? 3 : bx1 - bx0 > 420 ? 2 : 1;
+      const rows = kampung ? 2 : 1;
+      for (let cx = 0; cx < cols; cx += 1) {
+        for (let cy = 0; cy < rows; cy += 1) {
+          const lot = {
+            x: bx0 + ((bx1 - bx0) / cols) * cx,
+            y: by0 + ((by1 - by0) / rows) * cy,
+            w: (bx1 - bx0) / cols,
+            h: (by1 - by0) / rows,
+          };
+          const centre = { x: lot.x + lot.w / 2, y: lot.y + lot.h / 2 };
+          if (nearPlaza && Math.hypot(centre.x - PLAZA.x, centre.y - PLAZA.y) < PLAZA.r + 40) continue;
+          // Bu Ratna's warung courtyard stays open in every seed: the stall
+          // is a mission landmark, and its marker must never sit inside a
+          // building. The clearing runs south to Jl. Merdeka for access.
+          if (lot.x < 1300 && lot.x + lot.w > 1060 && lot.y < 1000 && lot.y + lot.h > 820) continue;
+          // The Sudirman/Thamrin crossing stays open: cars need room to
+          // swing through the turn without clipping the corner blocks.
+          if (lot.x < 1420 && lot.x + lot.w > 1180 && lot.y < 470 && lot.y + lot.h > 270) continue;
+          // Every avenue/street crossing stays open for the same reason:
+          // turning room at all nine intersections, not just the main one.
+          let crossesJunction = false;
+          for (const jx of [520, 1300, 2080]) {
+            for (const jy of [360, 1000, 1640]) {
+              if (lot.x < jx + 120 && lot.x + lot.w > jx - 120 && lot.y < jy + 95 && lot.y + lot.h > jy - 95) crossesJunction = true;
+            }
+          }
+          if (crossesJunction) continue;
+          if (rng.chance(0.12)) continue; // empty lot: a yard, a car park, a patch of grass
+          const inset = kampung ? rng.range(8, 16) : rng.range(16, 30);
+          const w = Math.max(46, lot.w - inset * 2);
+          const d = Math.max(40, lot.h - inset * 2);
+          const x = lot.x + (lot.w - w) / 2 + rng.range(-6, 6);
+          const y = lot.y + (lot.h - d) / 2 + rng.range(-6, 6);
+          const nearAvenue = Math.abs(centre.x - 1300) < 420;
+          let kind = 'block';
+          let h = rng.range(30, 68);
+          if (kampung) {
+            kind = 'house';
+            h = rng.range(16, 28);
+          } else if (nearAvenue && rng.chance(0.55)) {
+            kind = 'tower';
+            h = rng.range(80, 180);
+          }
+          const walls = wallSets[kind];
+          const building = {
+            x, y, w, d, h,
+            wall: rng.pick(walls),
+            roof: kind === 'house' ? PALETTE.roofTile : rng.chance(0.5) ? PALETTE.roofFlat : PALETTE.roofDark,
+            kind,
+            cols: Math.max(2, Math.floor(w / 26)),
+            rows: Math.max(2, Math.floor(d / 24)),
+            litSeed: rng.int(0, 100000),
+            sign: null,
+            awning: kampung && rng.chance(0.3),
+          };
+          if ((kind === 'tower' || kind === 'block') && rng.chance(0.22)) building.sign = rng.pick(SIGN_TEXTS);
+          buildings.push(building);
+          colliders.push({ x: x + 3, y: y + 3, w: w - 6, h: d - 6 });
+        }
+      }
     }
   }
-  return hit;
+
+  // The monument and its pool anchor the plaza; both are solid.
+  props.push({ kind: 'monument', x: PLAZA.x, y: PLAZA.y });
+  colliders.push({ x: PLAZA.x - 30, y: PLAZA.y - 30, w: 60, h: 60 });
+  colliders.push({ x: PLAZA.x - 70, y: PLAZA.y + 52, w: 140, h: 56 });
+
+  // The port: warehouse, cranes, container stacks, and the sea itself.
+  const warehouse = { x: 1820, y: 1700, w: 300, d: 90, h: 46, wall: PALETTE.wallSlate, roof: PALETTE.roofDark, kind: 'warehouse', cols: 8, rows: 2, litSeed: 7, sign: 'GUDANG 7', awning: false };
+  buildings.push(warehouse);
+  colliders.push({ x: 1820, y: 1700, w: 300, h: 90 });
+  const containerColors = ['#b4552d', '#3f7d8c', '#c98f1f', '#6e7683', '#7d8f57'];
+  for (let i = 0; i < 14; i += 1) {
+    // Wide aisles: the lane between the rows stays walkable for the ledger
+    // run, and the gaps between stacks fit a person slipping through.
+    const cx = 1540 + (i % 7) * 150 + rng.range(-14, 14);
+    const cy = 1790 + Math.floor(i / 7) * 72 + rng.range(-4, 4);
+    props.push({ kind: 'container', x: cx, y: cy, w: 96, d: 28, color: containerColors[i % containerColors.length], stacked: rng.chance(0.4) });
+    colliders.push({ x: cx, y: cy, w: 96, h: 28 });
+  }
+  for (const craneX of [900, 1500, 2280]) {
+    props.push({ kind: 'crane', x: craneX, y: 1864 });
+    colliders.push({ x: craneX - 22, y: 1842, w: 44, h: 44 });
+  }
+  colliders.push({ x: 0, y: WATER_Y, w: WORLD.width, h: WORLD.height - WATER_Y });
+
+  // Palms down the Sudirman median and around the plaza.
+  for (let y = 90; y < 1960; y += 110) {
+    props.push({ kind: 'palm', x: 1300 + (y % 220 === 90 ? -14 : 14), y, lean: rng.range(-0.2, 0.2) });
+  }
+  for (let i = 0; i < 10; i += 1) {
+    const a = (i / 10) * Math.PI * 2;
+    props.push({ kind: 'palm', x: PLAZA.x + Math.cos(a) * 205, y: PLAZA.y + Math.sin(a) * 205, lean: rng.range(-0.15, 0.15) });
+  }
+  // Street lamps at the main intersections.
+  for (const lx of [520, 1300, 2080]) {
+    for (const ly of [360, 1000, 1640]) {
+      props.push({ kind: 'lamp', x: lx + 52, y: ly + 52 });
+      props.push({ kind: 'lamp', x: lx - 52, y: ly - 52 });
+    }
+  }
+  // Billboards with fictional Jakarta brands.
+  const boards = [
+    { x: 1180, y: 300, text: 'KOPI SENJA' }, { x: 1420, y: 900, text: 'SELAMAT DATANG' },
+    { x: 460, y: 1080, text: 'BANK NUSANTARA' }, { x: 2140, y: 420, text: 'BIOSKOP REX' },
+    { x: 600, y: 1560, text: 'NASI GORENG 88' }, { x: 2340, y: 1500, text: 'MAL SENJA' },
+  ];
+  for (const b of boards) props.push({ kind: 'billboard', ...b });
+  // Warung stalls, food carts, planters, roadwork cones, kampung laundry lines.
+  props.push({ kind: 'stall', x: 1180, y: 900, big: true });
+  props.push({ kind: 'stall', x: 2140, y: 950, big: false });
+  props.push({ kind: 'stall', x: 560, y: 420, big: false });
+  for (const [cx, cy] of [[700, 340], [1500, 1020], [1980, 620], [900, 1620]]) props.push({ kind: 'cart', x: cx, y: cy });
+  for (let i = 0; i < 12; i += 1) {
+    props.push({ kind: 'planter', x: rng.range(100, 2500), y: rng.range(100, 1600) });
+  }
+  for (const [cx, cy] of [[1240, 700], [1252, 730], [1360, 1200], [1372, 1230]]) props.push({ kind: 'cone', x: cx, y: cy });
+  for (let i = 0; i < 6; i += 1) {
+    props.push({ kind: 'laundry', x: rng.range(1760, 2440), y: rng.range(140, 900) });
+  }
+
+  // Traffic loops follow road centre lines; drivers offset to their right side.
+  const routes = [
+    { points: [[1300, 200], [1300, 1560], [520, 1560], [520, 440], [1300, 440]], lane: 26, kinds: ['sedan', 'taxi', 'van'] },
+    { points: [[2080, 200], [2080, 1560], [1300, 1560], [1300, 440], [2080, 440]], lane: 24, kinds: ['sedan', 'taxi', 'van'] },
+    { points: [[1850, 560], [2280, 560], [2280, 800], [1850, 800]], lane: 9, kinds: ['bajaj', 'bike'] },
+    { points: [[400, 1640], [2400, 1640], [2400, 1740], [400, 1740]], lane: 22, kinds: ['van', 'sedan', 'truck'] },
+  ];
+
+  // Sidewalk sample points for wandering pedestrians.
+  const sidewalkPoints = [];
+  for (const road of roads) {
+    if (road.kind === 'alley') continue;
+    const horizontal = road.y1 === road.y2;
+    const len = horizontal ? road.x2 - road.x1 : road.y2 - road.y1;
+    for (let d = 60; d < len; d += 130) {
+      for (const side of [-1, 1]) {
+        const px = horizontal ? road.x1 + d : road.x1 + side * (road.w / 2 + 16);
+        const py = horizontal ? road.y1 + side * (road.w / 2 + 16) : road.y1 + d;
+        if (px < 30 || px > WORLD.width - 30 || py < 30 || py > WORLD.height - 30) continue;
+        if (Math.hypot(px - PLAZA.x, py - PLAZA.y) < PLAZA.r - 30) continue;
+        let blocked = false;
+        for (const c of colliders) if (circleHitsRect(px, py, 8, c)) { blocked = true; break; }
+        if (!blocked) sidewalkPoints.push({ x: px, y: py });
+      }
+    }
+  }
+
+  // Parked cars wait at curbs, away from intersections.
+  const parkedSpots = [];
+  const spotRoads = [
+    { x: 520, vertical: true }, { x: 1300, vertical: true }, { x: 2080, vertical: true },
+    { y: 360, vertical: false }, { y: 1000, vertical: false }, { y: 1640, vertical: false },
+  ];
+  for (const sr of spotRoads) {
+    for (let i = 0; i < 5; i += 1) {
+      const along = rng.range(160, 1840);
+      const road = roads.find((r) => (sr.vertical ? r.x1 === sr.x && r.y1 === 0 : r.y1 === sr.y && r.x1 === 0));
+      const w = road ? road.w : 80;
+      const px = sr.vertical ? sr.x + (w / 2 + 20) * (i % 2 === 0 ? 1 : -1) : along;
+      const py = sr.vertical ? along : sr.y + (w / 2 + 20) * (i % 2 === 0 ? 1 : -1);
+      if (Math.hypot(px - PLAZA.x, py - PLAZA.y) < PLAZA.r + 20) continue;
+      let blocked = false;
+      for (const c of colliders) if (circleHitsRect(px, py, 26, c)) { blocked = true; break; }
+      if (!blocked) parkedSpots.push({ x: px, y: py, heading: sr.vertical ? 0 : Math.PI / 2 });
+    }
+  }
+
+  return {
+    seed,
+    roads,
+    buildings,
+    colliders,
+    props,
+    routes,
+    sidewalkPoints,
+    parkedSpots,
+    plaza: PLAZA,
+    waterY: WATER_Y,
+    markers: {
+      warung: { x: 1180, y: 900 },
+      dropNorth: { x: 1300, y: 300 },
+      kampungAlley: { x: 2100, y: 620 },
+      raceStart: { x: 1300, y: 1500 },
+      portYard: { x: 1900, y: 1830 },
+      ledger: { x: 2050, y: 1840 },
+    },
+    raceGates: [
+      { x: 1300, y: 1000 }, { x: 1300, y: 440 }, { x: 1700, y: 360 }, { x: 2080, y: 700 },
+      { x: 2080, y: 1400 }, { x: 1700, y: 1640 }, { x: 900, y: 1640 }, { x: 1300, y: 1500 },
+    ],
+    thiefWaypoints: [
+      { x: 1850, y: 560 }, { x: 2100, y: 560 }, { x: 2280, y: 560 }, { x: 2280, y: 800 },
+      { x: 2050, y: 800 }, { x: 1850, y: 800 }, { x: 1850, y: 620 }, { x: 2100, y: 620 },
+    ],
+    guardPosts: [
+      { x: 1760, y: 1800 }, { x: 1840, y: 1865 }, { x: 1940, y: 1790 }, { x: 2030, y: 1855 }, { x: 2120, y: 1800 },
+    ],
+  };
 }
 
-export function onRoad(city, x, z) {
-  if (x >= 180 && x <= WORLD.waterX) return true;
-  if (x >= PLAZA.x0 && x <= PLAZA.x1 && z >= PLAZA.z0 && z <= PLAZA.z1) return true;
-  for (const c of ROAD_COORDS) {
-    if (Math.abs(x - c) < halfAt(c)) return true;
-    if (Math.abs(z - c) < WORLD.roadHalf) return true;
+/** Push a circle out of every collider it touches; returns the corrected position. */
+export function collideCircle(city, x, y, radius) {
+  let hit = false;
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const c of city.colliders) {
+      const nx = Math.max(c.x, Math.min(x, c.x + c.w));
+      const ny = Math.max(c.y, Math.min(y, c.y + c.h));
+      const dx = x - nx;
+      const dy = y - ny;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= radius * radius) continue;
+      hit = true;
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        x = nx + (dx / d) * radius;
+        y = ny + (dy / d) * radius;
+      } else {
+        // Centre inside the box: push out along the smallest penetration.
+        const pushLeft = x - c.x + radius;
+        const pushRight = c.x + c.w - x + radius;
+        const pushUp = y - c.y + radius;
+        const pushDown = c.y + c.h - y + radius;
+        const m = Math.min(pushLeft, pushRight, pushUp, pushDown);
+        if (m === pushLeft) x = c.x - radius;
+        else if (m === pushRight) x = c.x + c.w + radius;
+        else if (m === pushUp) y = c.y - radius;
+        else y = c.y + c.h + radius;
+      }
+    }
   }
+  // The world edge is a wall: clamp the centre inside the map and report
+  // a hit, so callers that only apply corrections on a hit still enforce it.
+  const cx = Math.max(radius, Math.min(WORLD.width - radius, x));
+  const cy = Math.max(radius, Math.min(WORLD.height - radius, y));
+  if (cx !== x || cy !== y) hit = true;
+  return { x: cx, y: cy, hit };
+}
+
+export function pointBlocked(city, x, y, radius) {
+  for (const c of city.colliders) if (circleHitsRect(x, y, radius, c)) return true;
   return false;
 }
 
-export function nearestNode(city, x, z) {
-  let best = city.nodes[0];
-  let bd = Infinity;
-  for (const n of city.nodes) {
-    const d = (n.x - x) * (n.x - x) + (n.z - z) * (n.z - z);
-    if (d < bd) { bd = d; best = n; }
+/** Spiral out from a point until open ground is found; never spawns inside a wall. */
+export function findFreeSpot(city, x, y, radius) {
+  if (!pointBlocked(city, x, y, radius)) return { x, y };
+  for (let ring = 1; ring <= 10; ring += 1) {
+    const step = radius * 2 * ring;
+    for (let a = 0; a < 12; a += 1) {
+      const angle = (a / 12) * Math.PI * 2;
+      const px = x + Math.cos(angle) * step;
+      const py = y + Math.sin(angle) * step;
+      if (px > radius && px < WORLD.width - radius && py > radius && py < WORLD.height - radius && !pointBlocked(city, px, py, radius)) {
+        return { x: px, y: py };
+      }
+    }
   }
-  return best;
+  return { x, y };
 }
 
-export function randomRoadPoint(rng, city) {
-  const vertical = rng.chance(0.5);
-  const c = rng.pick(ROAD_COORDS);
-  const t = rng.range(-220, 220);
-  const lane = (rng.chance(0.5) ? 1 : -1) * (halfAt(c) - 3);
-  return vertical ? { x: c + lane, z: t } : { x: t, z: c + lane };
+/** True when a point sits on a road surface, within an optional extra margin. */
+export function pointOnRoad(city, x, y, pad = 0) {
+  for (const r of city.roads) {
+    const horizontal = r.y1 === r.y2;
+    if (horizontal) {
+      if (x >= r.x1 - pad && x <= r.x2 + pad && Math.abs(y - r.y1) <= r.w / 2 + pad) return true;
+    } else if (y >= r.y1 - pad && y <= r.y2 + pad && Math.abs(x - r.x1) <= r.w / 2 + pad) return true;
+  }
+  return false;
 }
