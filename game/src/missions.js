@@ -1,6 +1,6 @@
 // The story: Bimo owes the fixer Bu Ratna $5,000, and four jobs pay it
-// off. Each mission is a list of steps — go somewhere, take a car, beat the
-// rivals, pick something up, deliver it — run by one small state machine.
+// off. Each mission is a list of steps: go somewhere, take a car, beat the
+// rivals, pick something up, deliver it, run by one small state machine.
 // The manager owns the objective beacon, the mission spawns, the timers and
 // the fail states; the game loop only calls update() and reads the tracker.
 // Mission titles carry Indonesian flavour; every objective line is English.
