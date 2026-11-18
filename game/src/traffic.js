@@ -1,246 +1,259 @@
-// Traffic, police pursuit, racers and every car-to-car collision. Traffic follows the
-// road graph on the left, stops for what is ahead, and flees its car when hit hard.
+// The living city: traffic that follows the road loops, motorbikes that weave,
+// parked cars waiting to be borrowed, and pedestrians who stroll, pause and
+// run when trouble starts. Everything recycles around the camera.
 
-import { CAR_COLORS } from './config.js';
-import { collideCircle, nearestNode, randomRoadPoint } from './city.js';
-import { angLerp, clamp, damp, dist2, wrapAngle } from './vec.js';
-import { addShake, spawnSmoke, spawnSparks } from './effects.js';
-import { say } from './hud.js';
-import { spawnFleer } from './peds.js';
+import { CAR } from './config.js';
+import { collideCircle, pointOnRoad } from './city.js';
+import { clamp, damp, dist, dampAngle, wrapAngle } from './vec.js';
 
-let nextId = 1;
+const CAR_COLORS = ['#e8e4da', '#c0c4c8', '#3a3f46', '#a83a32', '#3a5a8c', '#d8b13c', '#5a7a4a', '#7a4a8c'];
+const PED_SHIRTS = ['#d86a4a', '#4a7ad8', '#e8c84a', '#7ab86a', '#c86a9a', '#e8e4da', '#4ac8b8', '#8c6a4a'];
+const SPEEDS = { sedan: 135, taxi: 155, van: 115, truck: 95, bajaj: 125, bike: 195 };
 
-const KINDS = ['sedan', 'sedan', 'sedan', 'taxi', 'van', 'sedan', 'truck', 'sedan', 'van', 'taxi'];
+let nextCarId = 1;
 
-export function makeVehicle(G, kind, x, z, heading, driver) {
-  const rng = G.rng;
-  const color = kind === 'taxi' ? [232, 178, 44] : kind === 'police' ? [238, 238, 240] : kind === 'race' ? rng.pick([[200, 40, 40], [40, 90, 200]]) : rng.pick(CAR_COLORS);
+export function makeCar(kind, x, y, heading, color) {
+  const sizes = {
+    sedan: { w: 62, d: 30 }, taxi: { w: 62, d: 30 }, van: { w: 72, d: 32 },
+    truck: { w: 84, d: 34 }, bajaj: { w: 40, d: 26 }, bike: { w: 34, d: 16 },
+  };
+  const size = sizes[kind] || sizes.sedan;
   return {
-    id: nextId,
-    kind, x, z, heading,
-    speed: 0, vx: 0, vz: 0,
-    color, driver,
-    top: kind === 'police' ? 38 : kind === 'race' ? 30 : kind === 'bike' ? 15 : 13,
-    targetSpeed: kind === 'bike' ? rng.range(11, 14) : rng.range(8, 12),
-    braking: false, honkT: 0, stuckT: 0, abandoned: false, gate: 0, finished: false,
-    node: null, next: null, prev: null,
+    id: nextCarId,
+    kind, x, y, heading, speed: 0, vx: 0, vy: 0,
+    w: size.w, d: size.d, color: color || CAR_COLORS[0],
+    route: -1, waypoint: 0, driver: true, parked: false,
+    hp: 100, brakeLight: false, race: false, rival: false, dead: false, missionCar: false,
   };
 }
+nextCarId = 1;
 
-function routeFrom(G, v) {
-  v.node = nearestNode(G.city, v.x, v.z);
-  const links = v.node.links;
-  v.next = links.length ? links[Math.floor(G.rng.next() * links.length)] : v.node;
-  v.prev = v.node;
+function routeTarget(city, car) {
+  const route = city.routes[car.route];
+  const point = route.points[car.waypoint];
+  const next = route.points[(car.waypoint + 1) % route.points.length];
+  const dx = next[0] - point[0];
+  const dy = next[1] - point[1];
+  const len = Math.hypot(dx, dy) || 1;
+  // Right-hand traffic: ride to the right of the direction of travel.
+  const lane = route.lane;
+  return { x: point[0] + (-dy / len) * lane, y: point[1] + (dx / len) * lane };
 }
 
-export function spawnTraffic(G) {
-  G.vehicles = G.vehicles || [];
-  for (let i = 0; i < 20; i += 1) {
-    const spot = randomRoadPoint(G.rng, G.city);
-    if (dist2(spot.x, spot.z, G.player.x, G.player.z) < 40) continue;
-    const v = makeVehicle(G, KINDS[i % KINDS.length], spot.x, spot.z, 0, 'traffic');
-    routeFrom(G, v);
-    v.heading = Math.atan2(v.next.x - v.x, v.next.z - v.z);
-    G.vehicles.push(v);
+function carAhead(S, car) {
+  const fx = Math.cos(car.heading);
+  const fy = Math.sin(car.heading);
+  let nearest = Infinity;
+  for (const other of S.cars) {
+    if (other === car || other.parked) continue;
+    const dx = other.x - car.x;
+    const dy = other.y - car.y;
+    const ahead = dx * fx + dy * fy;
+    if (ahead < 10 || ahead > 110) continue;
+    const side = Math.abs(-dx * fy + dy * fx);
+    if (side < 34 && ahead < nearest) nearest = ahead;
   }
-  for (let i = 0; i < 8; i += 1) {
-    const spot = randomRoadPoint(G.rng, G.city);
-    if (dist2(spot.x, spot.z, G.player.x, G.player.z) < 40) continue;
-    const v = makeVehicle(G, 'bike', spot.x, spot.z, 0, 'traffic');
-    routeFrom(G, v);
-    v.heading = Math.atan2(v.next.x - v.x, v.next.z - v.z);
-    G.vehicles.push(v);
-  }
+  return nearest;
 }
 
-export function spawnPoliceCar(G) {
-  const p = G.player;
-  for (let tries = 0; tries < 12; tries += 1) {
-    const spot = randomRoadPoint(G.rng, G.city);
-    const d = dist2(spot.x, spot.z, p.x, p.z);
-    if (d > 65 && d < 110) {
-      const v = makeVehicle(G, 'police', spot.x, spot.z, Math.atan2(p.x - spot.x, p.z - spot.z), 'police');
-      G.vehicles.push(v);
-      return v;
-    }
-  }
-  return null;
-}
-
-function radiusOf(v) { return v.kind === 'bike' ? 1.3 : 2.3; }
-
-function blockedAhead(G, v, range) {
-  const fx = Math.sin(v.heading);
-  const fz = Math.cos(v.heading);
-  for (const o of G.vehicles) {
-    if (o === v) continue;
-    const dx = o.x - v.x;
-    const dz = o.z - v.z;
-    const d = Math.hypot(dx, dz);
-    if (d > range || d < 0.01) continue;
-    if ((dx * fx + dz * fz) / d > 0.82) return true;
-  }
-  for (const ped of G.peds) {
-    if (ped.state === 'down') continue;
-    const dx = ped.x - v.x;
-    const dz = ped.z - v.z;
-    const d = Math.hypot(dx, dz);
-    if (d > range * 0.7 || d < 0.01) continue;
-    if ((dx * fx + dz * fz) / d > 0.9) return true;
-  }
-  return false;
-}
-
-function updateTrafficCar(G, v, dt) {
-  if (!v.next) routeFrom(G, v);
-  const dx = v.next.x - v.x;
-  const dz = v.next.z - v.z;
-  const d = Math.hypot(dx, dz);
-  if (d < 7) {
-    v.prev = v.node;
-    v.node = v.next;
-    const options = v.node.links.filter((n) => n !== v.prev);
-    v.next = options.length && G.rng.chance(0.85) ? options[Math.floor(G.rng.next() * options.length)] : v.node.links[Math.floor(G.rng.next() * v.node.links.length)];
-  }
-  const want = Math.atan2(dx, dz);
-  v.heading = angLerp(v.heading, want, 1 - Math.exp(-3.2 * dt));
-  const blocked = blockedAhead(G, v, 11);
-  v.braking = blocked;
-  const target = blocked ? 0 : v.targetSpeed;
-  v.speed = damp(v.speed, target, blocked ? 6 : 1.6, dt);
-  if (blocked) {
-    v.honkT += dt;
-    if (v.honkT > 2.5) { v.honkT = 0; G.audio.horn(); }
-  } else v.honkT = 0;
-  v.x += Math.sin(v.heading) * v.speed * dt;
-  v.z += Math.cos(v.heading) * v.speed * dt;
-  v.vx = Math.sin(v.heading) * v.speed;
-  v.vz = Math.cos(v.heading) * v.speed;
-  collideCircle(G.city, v, radiusOf(v));
-  if (dist2(v.x, v.z, G.player.x, G.player.z) > 220) {
-    const spot = randomRoadPoint(G.rng, G.city);
-    if (dist2(spot.x, spot.z, G.player.x, G.player.z) > 110) {
-      v.x = spot.x;
-      v.z = spot.z;
-      routeFrom(G, v);
-      v.heading = Math.atan2(v.next.x - v.x, v.next.z - v.z);
-    }
-  }
-}
-
-function updatePolice(G, v, dt) {
-  const p = G.player;
-  const d = dist2(v.x, v.z, p.x, p.z);
-  const want = Math.atan2(p.x - v.x, p.z - v.z);
-  v.heading = angLerp(v.heading, want, 1 - Math.exp(-2.6 * dt));
-  const onFoot = !p.driving;
-  const closing = d > 6 ? v.top : onFoot ? 3 : 6;
-  v.speed = damp(v.speed, closing, 2.2, dt);
-  v.x += Math.sin(v.heading) * v.speed * dt;
-  v.z += Math.cos(v.heading) * v.speed * dt;
-  v.vx = Math.sin(v.heading) * v.speed;
-  v.vz = Math.cos(v.heading) * v.speed;
-  const hit = collideCircle(G.city, v, radiusOf(v));
-  if ((hit && v.speed > 4) || v.speed < 1) v.stuckT += dt;
-  else v.stuckT = 0;
-  if (v.stuckT > 2.5) {
-    v.heading += (G.rng.chance(0.5) ? 1 : -1) * 1.2;
-    v.stuckT = 0;
-  }
-  v.braking = d < 8;
-}
-
-function updateRacer(G, v, dt) {
-  const gates = G.raceGates || [];
-  if (v.finished || v.gate >= gates.length) {
-    v.speed = damp(v.speed, 0, 1.5, dt);
-    v.x += Math.sin(v.heading) * v.speed * dt;
-    v.z += Math.cos(v.heading) * v.speed * dt;
+function stepRouteCar(S, car, dt) {
+  const route = S.city.routes[car.route];
+  const target = routeTarget(S.city, car);
+  const d = dist(car.x, car.y, target.x, target.y);
+  if (d < 46) {
+    car.waypoint = (car.waypoint + 1) % route.points.length;
     return;
   }
-  const gate = gates[v.gate];
-  const d = dist2(v.x, v.z, gate.x, gate.z);
-  if (d < 9) {
-    v.gate += 1;
-    if (v.gate >= gates.length) { v.finished = true; say(G, 'A rival finished the race.', '#ffb08a'); }
-    return;
+  const wantHeading = Math.atan2(target.y - car.y, target.x - car.x);
+  car.heading = dampAngle(car.heading, wantHeading, 3.2, dt);
+  let cruise = SPEEDS[car.kind] || 130;
+  if (S.jam && car.route <= 1) cruise *= 0.45;
+  const ahead = carAhead(S, car);
+  if (ahead < 70) cruise = Math.min(cruise, Math.max(0, (ahead - 30) * 2.2));
+  if (car.kind === 'bike') {
+    cruise *= 1.15;
+    car.heading = wrapAngle(car.heading + Math.sin(S.time * 2.1 + car.id) * 0.35 * dt);
   }
-  const want = Math.atan2(gate.x - v.x, gate.z - v.z);
-  const turn = clamp(wrapAngle(want - v.heading), -1, 1);
-  v.heading += turn * 2.2 * dt;
-  const playerGate = G.racePlayerGate || 0;
-  let target = 27;
-  if (v.gate > playerGate + 1) target = 22;
-  if (v.gate < playerGate) target = 30;
-  v.speed = damp(v.speed, target, 1.4, dt);
-  v.x += Math.sin(v.heading) * v.speed * dt;
-  v.z += Math.cos(v.heading) * v.speed * dt;
-  v.vx = Math.sin(v.heading) * v.speed;
-  v.vz = Math.cos(v.heading) * v.speed;
-  collideCircle(G.city, v, radiusOf(v));
+  car.speed = damp(car.speed, cruise, 1.6, dt);
+  car.vx = Math.cos(car.heading) * car.speed;
+  car.vy = Math.sin(car.heading) * car.speed;
+  const px = car.x;
+  const py = car.y;
+  car.x += car.vx * dt;
+  car.y += car.vy * dt;
+  const fixed = collideCircle(S.city, car.x, car.y, car.d * 0.5);
+  car.x = fixed.x;
+  car.y = fixed.y;
+  // Unstuck: a car shoved off the road grinds against a wall forever and
+  // blocks the street. After 2.5s of trying without moving, put it back
+  // on its route point; background traffic already pops at recycle.
+  const moved = dist(px, py, car.x, car.y);
+  if (car.speed > 30 && moved < car.speed * dt * 0.25) {
+    car.stuckT = (car.stuckT || 0) + dt;
+  } else {
+    car.stuckT = 0;
+  }
+  // A car stopped dead in a frozen queue is stuck too, even though its
+  // speed reads low: if it has not moved at all for 4s, put it back.
+  if (moved < 0.2) {
+    car.stillT = (car.stillT || 0) + dt;
+  } else {
+    car.stillT = 0;
+  }
+  if (car.stuckT > 2.5 || car.stillT > 4) {
+    car.x = target.x;
+    car.y = target.y;
+    car.stuckT = 0;
+    car.stillT = 0;
+  }
 }
 
-function collideVehicles(G, dt) {
-  const list = G.vehicles;
-  for (let i = 0; i < list.length; i += 1) {
-    for (let j = i + 1; j < list.length; j += 1) {
-      const a = list[i];
-      const b = list[j];
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const d = Math.hypot(dx, dz);
-      const min = radiusOf(a) + radiusOf(b) - 0.6;
-      if (d >= min || d < 0.01) continue;
-      const nx = dx / d;
-      const nz = dz / d;
-      const push = (min - d) / 2;
-      a.x -= nx * push;
-      a.z -= nz * push;
-      b.x += nx * push;
-      b.z += nz * push;
-      const rel = Math.abs((a.vx - b.vx) * nx + (a.vz - b.vz) * nz);
-      if (rel > 5) {
-        const mx = (a.x + b.x) / 2;
-        const mz = (a.z + b.z) / 2;
-        spawnSparks(G, mx, 0.9, mz, 8);
-        if (rel > 10) {
-          G.audio.crash();
-          if (a.driver === 'player' || b.driver === 'player') addShake(G, clamp(rel * 0.02, 0.15, 0.6));
-        }
-        const victim = a.driver === 'traffic' ? a : b.driver === 'traffic' ? b : null;
-        const hitter = victim === a ? b : a;
-        if (victim && hitter.driver === 'player' && rel > 9 && !victim.abandoned) {
-          victim.driver = 'parked';
-          victim.abandoned = true;
-          victim.speed = 0;
-          spawnSmoke(G, victim.x, 1, victim.z, 6);
-          spawnFleer(G, victim.x + 2, victim.z + 2);
+function stepPed(S, ped, dt) {
+  const threat = S.threat;
+  if (threat && dist(ped.x, ped.y, threat.x, threat.y) < 190 && ped.state !== 'down') {
+    ped.state = 'flee';
+    ped.fleeT = 2.5;
+  }
+  if (ped.state === 'down') {
+    ped.downT -= dt;
+    if (ped.downT <= 0) {
+      ped.state = 'flee';
+      ped.fleeT = 3;
+    }
+    return;
+  }
+  if (ped.state === 'flee') {
+    ped.fleeT -= dt;
+    const away = Math.atan2(ped.y - (threat ? threat.y : ped.y), ped.x - (threat ? threat.x : ped.x));
+    ped.heading = dampAngle(ped.heading, away, 6, dt);
+    ped.x += Math.cos(ped.heading) * 240 * dt;
+    ped.y += Math.sin(ped.heading) * 240 * dt;
+    if (ped.fleeT <= 0) ped.state = 'walk';
+  } else {
+    if (ped.pauseT > 0) {
+      ped.pauseT -= dt;
+      return;
+    }
+    if (!ped.tx) {
+      const p = S.city.sidewalkPoints[Math.floor(Math.random() * S.city.sidewalkPoints.length)];
+      if (p && dist(ped.x, ped.y, p.x, p.y) < 520) {
+        ped.tx = p.x;
+        ped.ty = p.y;
+      } else {
+        ped.pauseT = 1 + Math.random() * 2;
+        return;
+      }
+    }
+    const d = dist(ped.x, ped.y, ped.tx, ped.ty);
+    if (d < 14) {
+      ped.tx = null;
+      ped.pauseT = 1 + Math.random() * 3;
+      return;
+    }
+    ped.heading = dampAngle(ped.heading, Math.atan2(ped.ty - ped.y, ped.tx - ped.x), 5, dt);
+    ped.x += Math.cos(ped.heading) * ped.speed * dt;
+    ped.y += Math.sin(ped.heading) * ped.speed * dt;
+  }
+  const fixed = collideCircle(S.city, ped.x, ped.y, 13);
+  ped.x = fixed.x;
+  ped.y = fixed.y;
+  ped.phase += dt * 6;
+}
+
+export function createTraffic(city, rng) {
+  const cars = [];
+  const peds = [];
+  for (let i = 0; i < 16; i += 1) {
+    const routeIdx = i % city.routes.length;
+    const route = city.routes[routeIdx];
+    const kind = rng.pick(route.kinds);
+    const seg = Math.floor(rng.next() * route.points.length);
+    const a = route.points[seg];
+    const b = route.points[(seg + 1) % route.points.length];
+    const t = rng.next();
+    const car = makeCar(kind, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, Math.atan2(b[1] - a[1], b[0] - a[0]), rng.pick(CAR_COLORS));
+    car.id = nextCarId;
+    nextCarId += 1;
+    car.route = routeIdx;
+    car.waypoint = (seg + 1) % route.points.length;
+    if (kind === 'taxi') car.color = '#e8c84a';
+    if (kind === 'bajaj') car.color = '#e87e2c';
+    cars.push(car);
+  }
+  for (const spot of city.parkedSpots) {
+    const kind = rng.pick(['sedan', 'sedan', 'van', 'taxi']);
+    const car = makeCar(kind, spot.x, spot.y, spot.heading, rng.pick(CAR_COLORS));
+    car.id = nextCarId;
+    nextCarId += 1;
+    car.parked = true;
+    car.driver = false;
+    if (kind === 'taxi') car.color = '#e8c84a';
+    cars.push(car);
+  }
+  for (let i = 0; i < 22; i += 1) {
+    const p = city.sidewalkPoints[Math.floor(rng.next() * city.sidewalkPoints.length)] || { x: 1300, y: 500 };
+    peds.push({
+      x: p.x, y: p.y, tx: null, ty: null, heading: rng.range(0, Math.PI * 2),
+      speed: rng.range(55, 85), pauseT: rng.range(0, 2), state: 'walk',
+      fleeT: 0, downT: 0, shirt: rng.pick(PED_SHIRTS), phase: rng.range(0, 6),
+    });
+  }
+  return { cars, peds, jamCars: [] };
+}
+
+export function spawnFleeingPed(S, x, y) {
+  S.peds.push({
+    x, y, tx: null, ty: null, heading: Math.random() * Math.PI * 2,
+    speed: 90, pauseT: 0, state: 'flee', fleeT: 3, downT: 0,
+    shirt: PED_SHIRTS[Math.floor(Math.random() * PED_SHIRTS.length)], phase: 0,
+  });
+}
+
+export function setJam(S, on) {
+  if (on === S.jam) return;
+  S.jam = on;
+  if (on) {
+    for (let i = 0; i < 6; i += 1) {
+      const y = 500 + i * 170;
+      const car = makeCar(i % 2 ? 'van' : 'sedan', 1300 + (i % 2 ? 30 : -30), y, Math.PI / 2, CAR_COLORS[i % CAR_COLORS.length]);
+      car.id = nextCarId;
+      nextCarId += 1;
+      car.route = 0;
+      car.waypoint = 1;
+      S.cars.push(car);
+      S.jamCars.push(car);
+    }
+  } else {
+    for (const car of S.jamCars) car.dead = true;
+    S.jamCars = [];
+    S.cars = S.cars.filter((c) => !c.dead);
+  }
+}
+
+export function stepTraffic(S, dt) {
+  const cam = S.camera;
+  for (const car of S.cars) {
+    if (car.parked || car === S.player.car || car.rival || car.dead) continue;
+    if (car.route >= 0) stepRouteCar(S, car, dt);
+    // Recycle far-away traffic to a route point near the camera.
+    if (dist(car.x, car.y, cam.x, cam.y) > 1100 && car.route >= 0 && !car.missionCar) {
+      const route = S.city.routes[car.route];
+      let best = null;
+      let bestD = Infinity;
+      for (const p of route.points) {
+        const d = dist(p[0], p[1], cam.x, cam.y);
+        if (d > 500 && d < bestD) {
+          bestD = d;
+          best = p;
         }
       }
-      const swap = ((a.vx - b.vx) * nx + (a.vz - b.vz) * nz) * 0.5;
-      a.vx -= nx * swap;
-      a.vz -= nz * swap;
-      b.vx += nx * swap;
-      b.vz += nz * swap;
-      a.speed *= 0.7;
-      b.speed *= 0.7;
+      if (best) {
+        car.x = best[0];
+        car.y = best[1];
+        car.waypoint = (route.points.indexOf(best) + 1) % route.points.length;
+      }
     }
   }
-  void dt;
-}
-
-export function updateTraffic(G, dt) {
-  for (const v of G.vehicles) {
-    if (v.driver === 'traffic') updateTrafficCar(G, v, dt);
-    else if (v.driver === 'police') updatePolice(G, v, dt);
-    else if (v.driver === 'racer') updateRacer(G, v, dt);
-    else if (v.driver === 'parked' && v.abandoned && dist2(v.x, v.z, G.player.x, G.player.z) > 170) v.removeMe = true;
-  }
-  collideVehicles(G, dt);
-  for (let i = G.vehicles.length - 1; i >= 0; i -= 1) {
-    const v = G.vehicles[i];
-    if (v.removeMe) G.vehicles.splice(i, 1);
-    else if (v.driver === 'police' && G.wanted.level === 0 && dist2(v.x, v.z, G.player.x, G.player.z) > 130) G.vehicles.splice(i, 1);
-  }
+  for (const ped of S.peds) stepPed(S, ped, dt);
+  if (S.peds.length > 40) S.peds.splice(0, S.peds.length - 40);
 }
