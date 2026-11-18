@@ -1,110 +1,101 @@
-// The screenshot scenes behind ?shot=start|play|end|vista. Each one stages the real game
-// (a mission, a chase, a payout banner, a high orbit) and lets the simulation run, so the
-// frame is what playing really looks like and the same seed always gives the same frame.
+// The screenshot scenes behind ?shot=start|play|end|vista. Each one stages a
+// real game state through the same rules the player meets — the title over a
+// living avenue, a police chase mid-mission, the paid-off ending, and a wide
+// view of the monument plaza — then the runner paints it and sets
+// window.__shotReady. The seed fixes the city; the staging fixes the moment.
 
-import { dist2, wrapAngle, clamp } from './vec.js';
-import { startMission } from './missions.js';
-import { makeVehicle, spawnPoliceCar } from './traffic.js';
-import { showBanner } from './hud.js';
-import { clearWanted } from './wanted.js';
+import { TICK } from './config.js';
+import { stageAt } from './missions.js';
+import { addHeat } from './wanted.js';
+import { clamp } from './vec.js';
 
-export function stageShot(G, name) {
-  G.shotMode = true;
-  const P = G.city.places;
-  if (name === 'play') {
-    G.cash = 1050;
-    startMission(G, 0);
-    const car = G.vehicles.find((v) => v.driver === 'mission');
-    car.x = 0;
-    car.z = -20;
-    car.heading = Math.PI;
-    car.driver = 'player';
-    const p = G.player;
-    p.driving = car;
-    p.x = car.x;
-    p.z = car.z;
-    p.heading = Math.PI;
-    // Clear parked cars from the avenue corridor so the scripted drive never
-    // rear-ends a parked sedan and stalls mid-shot.
-    for (let i = G.vehicles.length - 1; i >= 0; i -= 1) {
-      const v = G.vehicles[i];
-      if (v.driver === 'parked' && Math.abs(v.x) < 14 && v.z > -175 && v.z < 30) G.vehicles.splice(i, 1);
-    }
-    G.wanted.level = 3;
-    // A parked cruiser on the shoulder ahead: it stays in frame with its lights on
-    // instead of chasing into the camera and covering the player's car.
-    const roadside = makeVehicle(G, 'police', 9, -85, Math.PI, 'parked');
-    G.vehicles.push(roadside);
-    const headOn = spawnPoliceCar(G);
-    if (headOn) {
-      headOn.x = -3;
-      headOn.z = -160;
-      headOn.heading = 0;
-    }
-    for (const [tx, tz] of [[4, -70], [-4, -100], [4, -130], [-4, -160]]) {
-      const t = makeVehicle(G, 'sedan', tx, tz, Math.PI, 'traffic');
-      G.vehicles.push(t);
-    }
-    G.shotScene = 'play';
-    return;
-  }
-  if (name === 'end') {
-    G.cash = 5250;
-    startMission(G, 3);
-    // The story is over: the objective panel reads "Debt paid" instead of showing
-    // the final mission's first stage under the completion banner.
-    G.storyDone = true;
-    G.mission.active = false;
-    G.messages.length = 0;
-    const p = G.player;
-    p.x = 206;
-    p.z = 108;
-    p.heading = -Math.PI / 2;
-    G.wanted.level = 3;
-    for (const [ox, oz] of [[178, 98], [184, 122]]) {
-      const cop = makeVehicle(G, 'police', ox, oz, Math.atan2(p.x - ox, p.z - oz), 'parked');
-      G.vehicles.push(cop);
-    }
-    showBanner(G, 'MISSION COMPLETE', '+$1,500 · Jebakan di Pelabuhan');
-    if (G.banner) G.banner.t = 60;
-    G.shotScene = 'end';
-    return;
-  }
-  if (name === 'vista') {
-    G.shotVista = true;
-    G.shotScene = 'vista';
-    return;
-  }
-  G.shotVista = true;
-  G.shotScene = 'start';
+function driveToward(S) {
+  // Autopilot: full throttle, steer at the marker, ease off in tight turns.
+  const player = S.player;
+  const marker = S.marker;
+  if (!marker || !player.car) return { x: 0, y: 0 };
+  const want = Math.atan2(marker.y - player.y, marker.x - player.x);
+  let diff = want - player.heading;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return { x: clamp(diff * 2.2, -1, 1), y: 1 };
 }
 
-/** Per-frame staging behaviour: the play scene drives itself up the avenue. */
-export function shotTick(G) {
-  if (G.shotScene !== 'play') return;
-  const v = G.player.driving;
-  if (!v) return;
-  // Traffic pulls aside for the chase: any civilian car stalled just ahead of the
-  // player slides sideways instead of blocking the scripted drive forever.
-  for (const o of G.vehicles) {
-    if (o === v || o.kind === 'police') continue;
-    const dz = o.z - v.z;
-    if (dz < 0 && dz > -10 && Math.abs(o.x - v.x) < 4 && Math.abs(o.x) < 10) {
-      o.x += (o.x >= v.x ? 1 : -1) * 0.35;
+function fakeInput(S) {
+  return {
+    axes: () => driveToward(S),
+    held: { brake: false, sprint: false },
+    takeActions: () => 0,
+    mouse: { clientX: 0, clientY: 0 },
+  };
+}
+
+export function stageShot(name, world) {
+  const S = world.state;
+  world.reset();
+  const input = fakeInput(S);
+
+  if (name === 'play') {
+    // Mid-chase on Sudirman: delivering the package, three stars, patrols closing.
+    stageAt(S, 0, 1);
+    S.player.car.x = 1300;
+    S.player.car.y = 1420;
+    S.player.car.heading = -Math.PI / 2;
+    S.player.x = 1300;
+    S.player.y = 1420;
+    S.camera.x = 1300;
+    S.camera.y = 1420;
+    addHeat(S, 300);
+    // Drive until the drop is half a screen ahead: mid-avenue, patrols closing.
+    for (let i = 0; i < 8 / TICK; i += 1) {
+      world.step(TICK, input, 0);
+      const d = Math.hypot(S.player.x - S.marker.x, S.player.y - S.marker.y);
+      if (d < 520) break;
     }
+    S.showBanner('Macet Total', 'Deliver the package to the Thamrin drop', 3.4);
+    S.banner.t = 0.5; // past the pop-in, so the banner reads in the still frame
+    return { screen: 'play' };
   }
-  const ahead = { x: 0, z: v.z - 60 };
-  const want = Math.atan2(ahead.x - v.x, ahead.z - v.z);
-  const steer = clamp(wrapAngle(want - v.heading) * 1.6, -1, 1);
-  G.scriptAxis = { x: steer, y: 1 };
-  if (v.z < -100) {
-    // Loop back for a longer chase: jump the chase south and keep driving.
-    v.z += 130;
-    G.player.z = v.z;
-    for (const cop of G.vehicles) {
-      if (cop.kind === 'police') cop.z += 130;
-    }
+
+  if (name === 'end') {
+    // The paid-off ending at Bu Ratna's warung, dusk light, story complete.
+    S.cash = 5250;
+    S.cashShown = 5250;
+    S.mission.index = 4;
+    S.mission.active = false;
+    S.objective = 'Free roam — Jakarta is yours.';
+    S.marker = null;
+    S.stats.playTime = 754;
+    S.player.x = 1210;
+    S.player.y = 950;
+    S.camera.x = 1210;
+    S.camera.y = 950;
+    for (let i = 0; i < 4 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
+    return { screen: 'done' };
   }
-  void dist2;
-  void clearWanted;
+
+  if (name === 'vista') {
+    // Wide view of the monument plaza with the HUD on: the city at a glance.
+    // At zoom 0.55 the frame spans 2327x1309 world units, so the camera
+    // sits at the city centre: any further west and the frame shows the
+    // void past the world's edge as a dark band.
+    S.player.x = 760;
+    S.player.y = 900;
+    S.camera.x = 1300;
+    S.camera.y = 850;
+    S.camera.zoomTarget = 0.55;
+    S.camera.zoom = 0.55;
+    for (let i = 0; i < 8 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
+    S.camera.x = 1300;
+    S.camera.y = 850;
+    return { screen: 'play' };
+  }
+
+  // Start: the title over the avenue as traffic rolls past the warung.
+  S.camera.x = 1080;
+  S.camera.y = 760;
+  for (let i = 0; i < 6 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
+  S.camera.x = 1080;
+  S.camera.y = 760;
+  return { screen: 'title' };
 }
