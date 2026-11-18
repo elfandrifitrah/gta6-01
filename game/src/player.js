@@ -1,207 +1,239 @@
-// Bimo on foot and behind the wheel: camera-relative walking, arcade driving with grip
-// and drift, entering and exiting vehicles, health and regeneration.
+// Bimo on foot and behind the wheel: arcade movement, car physics with drift,
+// entering and leaving cars, health and regeneration. Combat lives in
+// combat.js; this module only moves bodies and resolves crashes.
 
-import { CAR, PLAYER } from './config.js';
-import { collideCircle, onRoad } from './city.js';
-import { angLerp, clamp, damp, dist2 } from './vec.js';
-import { addShake, spawnDust, spawnSparks, spawnSmoke } from './effects.js';
-import { say } from './hud.js';
-import { addWanted } from './wanted.js';
+import { CAR, FOOT, HEALTH } from './config.js';
+import { collideCircle } from './city.js';
+import { clamp, damp, dist, wrapAngle } from './vec.js';
 
-export function createPlayer(place) {
+let crashSoundAt = 0;
+
+export function createPlayer(x, y) {
   return {
-    x: place.x, z: place.z, heading: Math.PI, speed: 0,
-    phase: 0, moving: false, health: PLAYER.health, maxHealth: PLAYER.health,
-    driving: null, punchT: 0, shootT: 0, regenT: 0, invulnT: 0,
-    dead: false, deadT: 0,
-    shirt: [28, 148, 158], pants: [42, 46, 60], skin: [196, 150, 110], hair: [30, 24, 20],
+    x, y, vx: 0, vy: 0, heading: -Math.PI / 2, speed: 0,
+    health: HEALTH.max, car: null, ammo: 0, hasPistol: false,
+    punchCd: 0, shotCd: 0, hurtT: 0, lastDamageT: -99, moving: false,
+    walkPhase: 0, aimHeading: -Math.PI / 2, entering: 0,
   };
 }
 
-export function updatePlayer(G, dt, input, actions) {
-  const p = G.player;
-  p.punchT = Math.max(0, p.punchT - dt);
-  p.shootT = Math.max(0, p.shootT - dt);
-  p.invulnT = Math.max(0, p.invulnT - dt);
-  if (p.dead) { p.deadT += dt; return; }
-  if (p.driving) updateDriving(G, dt, input, actions);
-  else updateOnFoot(G, dt, input, actions);
-  p.regenT += dt;
-  if (p.regenT > PLAYER.regenDelay && p.health < p.maxHealth) {
-    p.health = Math.min(p.maxHealth, p.health + PLAYER.regen * dt);
+function carCircles(car) {
+  const fx = Math.cos(car.heading);
+  const fy = Math.sin(car.heading);
+  const half = car.w * 0.28;
+  return [
+    { x: car.x + fx * half, y: car.y + fy * half, r: car.d * 0.52 },
+    { x: car.x - fx * half, y: car.y - fy * half, r: car.d * 0.52 },
+  ];
+}
+
+function crashCar(S, car, strength) {
+  if (strength < 40) return;
+  car.hp = Math.max(0, car.hp - strength * 0.05);
+  S.fx.sparks(car.x, car.y);
+  S.fx.shake(clamp(strength / 500, 0.1, 0.55));
+  if (S.time - crashSoundAt > 0.25) {
+    S.audio.crash(strength / 500);
+    crashSoundAt = S.time;
   }
 }
 
-function updateOnFoot(G, dt, input, actions) {
-  const p = G.player;
-  const axis = input.axis();
-  const cam = G.camera;
-  const fx = Math.sin(cam.yaw);
-  const fz = Math.cos(cam.yaw);
-  const rx = Math.cos(cam.yaw);
-  const rz = -Math.sin(cam.yaw);
-  let mx = fx * axis.y + rx * axis.x;
-  let mz = fz * axis.y + rz * axis.x;
-  const len = Math.hypot(mx, mz);
-  p.moving = len > 0.1;
-  if (p.moving) {
-    mx /= len;
-    mz /= len;
-    const speed = input.run() ? PLAYER.run : PLAYER.walk;
-    const targetHeading = Math.atan2(mx, mz);
-    p.heading = angLerp(p.heading, targetHeading, 1 - Math.exp(-12 * dt));
-    p.x += mx * speed * dt;
-    p.z += mz * speed * dt;
-    p.phase += speed * dt * 1.7;
-    p.speed = speed;
-    if (input.run() && Math.random() < dt * 6) spawnDust(G, p.x, p.z, 1);
-  } else {
-    p.speed = 0;
-  }
-  collideCircle(G.city, p, PLAYER.radius);
-  if (actions & 4) tryEnterVehicle(G);
-}
-
-function updateDriving(G, dt, input, actions) {
-  const p = G.player;
-  const v = p.driving;
-  const axis = input.axis();
-  const onroad = onRoad(G.city, v.x, v.z);
-  const top = v.top || CAR.top;
-  if (axis.y > 0) v.speed += CAR.accel * dt * (onroad ? 1 : 0.7);
-  else if (axis.y < 0) {
-    if (v.speed > 0.5) v.speed -= CAR.brake * dt;
-    else v.speed = Math.max(v.speed - CAR.accel * 0.6 * dt, -CAR.reverseMax);
-  } else {
-    v.speed = damp(v.speed, 0, onroad ? 0.5 : 1.4, dt);
-  }
-  if (input.brake()) {
-    v.speed = damp(v.speed, 0, 3.2, dt);
-    if (Math.abs(v.speed) > 9 && Math.random() < dt * 8) {
-      spawnSmoke(G, v.x, 0.3, v.z, 1);
-      G.audio.skid();
+function collideCarWithCity(S, car) {
+  let hitAny = false;
+  for (const c of carCircles(car)) {
+    const fixed = collideCircle(S.city, c.x, c.y, c.r);
+    if (fixed.hit) {
+      hitAny = true;
+      car.x += fixed.x - c.x;
+      car.y += fixed.y - c.y;
     }
   }
-  v.speed = clamp(v.speed, -CAR.reverseMax, top);
-  const speedFactor = clamp(Math.abs(v.speed) / 9, 0, 1) * (1 - (Math.abs(v.speed) / top) * 0.55);
-  v.heading += axis.x * CAR.steer * speedFactor * dt * (v.speed >= 0 ? 1 : -1);
-  const dirX = Math.sin(v.heading);
-  const dirZ = Math.cos(v.heading);
-  const grip = input.brake() ? 1.6 : CAR.grip;
-  let vx = v.vx || 0;
-  let vz = v.vz || 0;
-  const forward = vx * dirX + vz * dirZ;
-  const latX = vx - dirX * forward;
-  const latZ = vz - dirZ * forward;
-  const keep = Math.exp(-grip * dt);
-  vx = dirX * v.speed + latX * keep;
-  vz = dirZ * v.speed + latZ * keep;
-  v.vx = vx;
-  v.vz = vz;
-  const before = { x: v.x, z: v.z };
-  v.x += vx * dt;
-  v.z += vz * dt;
-  const hitWall = collideCircle(G.city, v, CAR.radius);
+  return hitAny;
+}
+
+function collideCarWithCars(S, car) {
+  for (const other of S.cars) {
+    if (other === car || other.dead) continue;
+    if (!Number.isFinite(other.x) || !Number.isFinite(other.y)) continue;
+    const d = dist(car.x, car.y, other.x, other.y);
+    const min = CAR.radius + CAR.radius * (other.kind === 'bike' ? 0.6 : 1);
+    if (d >= min || d < 0.01) continue;
+    const push = (min - d) / 2;
+    const nx = (car.x - other.x) / d;
+    const ny = (car.y - other.y) / d;
+    car.x += nx * push;
+    car.y += ny * push;
+    other.x -= nx * push;
+    other.y -= ny * push;
+    const relSpeed = Math.abs(car.speed - other.speed);
+    if (relSpeed > 60) {
+      crashCar(S, car, relSpeed);
+      crashCar(S, other, relSpeed);
+      const exchange = car.speed * 0.35;
+      car.speed *= 0.6;
+      other.speed += exchange * 0.4 * Math.sign(car.speed || 1);
+      other.heading = wrapAngle(other.heading + 0.15 * Math.sign(nx));
+    }
+  }
+}
+
+function stepDriving(S, player, input, dt) {
+  const car = player.car;
+  const axes = input.axes();
+  const maxSpeed = car.race ? CAR.raceMaxSpeed : CAR.maxSpeed;
+  if (axes.y > 0) car.speed += CAR.accel * dt;
+  else if (axes.y < 0) car.speed -= (car.speed > 5 ? CAR.brake : CAR.accel * 0.6) * dt;
+  else car.speed = damp(car.speed, 0, 0.7, dt);
+  car.speed = clamp(car.speed, -CAR.reverseMax, maxSpeed);
+
+  const steerAuthority = clamp(Math.abs(car.speed) / 120, 0, 1);
+  car.heading = wrapAngle(car.heading + axes.x * CAR.turn * steerAuthority * dt * Math.sign(car.speed || 1));
+  car.brakeLight = axes.y < 0 || input.held.brake;
+
+  // Velocity chases the heading; the handbrake loosens the grip so the tail slides.
+  const grip = input.held.brake ? CAR.driftGrip : CAR.grip;
+  const wantVx = Math.cos(car.heading) * car.speed;
+  const wantVy = Math.sin(car.heading) * car.speed;
+  car.vx = damp(car.vx, wantVx, grip, dt);
+  car.vy = damp(car.vy, wantVy, grip, dt);
+  const speedBefore = Math.hypot(car.vx, car.vy);
+  car.x += car.vx * dt;
+  car.y += car.vy * dt;
+  const hitWall = collideCarWithCity(S, car);
+  collideCarWithCars(S, car);
   if (hitWall) {
-    const impact = Math.abs(v.speed);
-    if (impact > 7) {
-      spawnSparks(G, v.x, 0.8, v.z, 10);
-      addShake(G, clamp(impact * 0.03, 0.15, 0.7));
-      G.audio.crash();
-      if (impact > 20) damagePlayer(G, Math.round((impact - 20) * 0.8), 'crash');
+    const loss = speedBefore * 0.55;
+    car.speed *= 0.45;
+    car.vx *= 0.4;
+    car.vy *= 0.4;
+    crashCar(S, car, loss);
+    if (loss > 120) damagePlayer(S, loss * 0.03, car.x, car.y);
+  }
+  if (input.held.brake && Math.abs(car.speed) > 180 && Math.random() < 0.5) {
+    S.fx.smoke(car.x - Math.cos(car.heading) * 26, car.y - Math.sin(car.heading) * 26);
+  }
+  if (Math.abs(car.speed) > 300 && Math.random() < 0.2) S.fx.dust(car.x, car.y + 18);
+
+  player.x = car.x;
+  player.y = car.y;
+  player.heading = car.heading;
+  player.speed = Math.hypot(car.vx, car.vy);
+  player.moving = player.speed > 20;
+  car.hp = Math.max(0, car.hp);
+
+  // Running over a pedestrian is a crime, not a tactic.
+  for (const ped of S.peds) {
+    if (ped.state === 'down') continue;
+    if (dist(car.x, car.y, ped.x, ped.y) < 34 && player.speed > 60) {
+      ped.state = 'down';
+      ped.downT = 3;
+      S.addHeat(30);
+      S.fx.hitStars(ped.x, ped.y);
+      S.fx.shake(0.35);
+      S.audio.punch();
     }
-    v.speed *= 0.35;
-    v.vx *= 0.3;
-    v.vz *= 0.3;
   }
-  v.braking = axis.y < 0 || input.brake();
-  p.x = v.x;
-  p.z = v.z;
-  p.heading = v.heading;
-  p.moving = Math.abs(v.speed) > 1;
-  p.phase += Math.abs(v.speed) * dt * 0.4;
-  if (Math.abs(v.speed) > 4 && Math.random() < dt * 5) {
-    spawnSmoke(G, v.x - dirX * 2.2, 0.4, v.z - dirZ * 2.2, 1);
-  }
-  if (actions & 4) exitVehicle(G);
-  void before;
 }
 
-function tryEnterVehicle(G) {
-  const p = G.player;
+function stepOnFoot(S, player, input, dt) {
+  const axes = input.axes();
+  const top = input.held.sprint ? FOOT.run : FOOT.walk;
+  const tx = axes.x * top;
+  // axes.y is throttle-positive (forward is +1); screen space runs down, so
+  // on foot the forward key must move the player up the screen.
+  const ty = -axes.y * top;
+  player.vx = damp(player.vx, tx, 12, dt);
+  player.vy = damp(player.vy, ty, 12, dt);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+  const fixed = collideCircle(S.city, player.x, player.y, FOOT.radius);
+  player.x = fixed.x;
+  player.y = fixed.y;
+  const speed = Math.hypot(player.vx, player.vy);
+  player.speed = speed;
+  player.moving = speed > 25;
+  if (player.moving) {
+    player.heading = Math.atan2(player.vy, player.vx);
+    player.walkPhase += dt * speed * 0.06;
+  }
+}
+
+export function nearestCar(S, x, y, range) {
   let best = null;
-  let bd = 5;
-  for (const v of G.vehicles) {
-    if (v.kind === 'police') continue;
-    const d = dist2(p.x, p.z, v.x, v.z);
-    if (d < bd) { bd = d; best = v; }
-  }
-  if (!best) return;
-  if (best.driver === 'traffic') {
-    best.driver = 'player';
-    const policeNear = G.vehicles.some((v) => v.kind === 'police' && dist2(p.x, p.z, v.x, v.z) < 55);
-    if (policeNear || G.wanted.level > 0) addWanted(G, 1, 'stole a car');
-    say(G, 'You took the car.', '#ffd257');
-    G.audio.horn();
-  } else if (best.driver === 'parked') {
-    best.driver = 'player';
-  } else if (best.driver === 'mission') {
-    best.driver = 'player';
-    say(G, 'You took the marked car.', '#ffd257');
-  }
-  best.speed = 0;
-  best.vx = 0;
-  best.vz = 0;
-  p.driving = best;
-  G.audio.click();
-}
-
-function exitVehicle(G) {
-  const p = G.player;
-  const v = p.driving;
-  if (!v) return;
-  const side = 2.8;
-  p.x = v.x + Math.cos(v.heading) * side;
-  p.z = v.z - Math.sin(v.heading) * side;
-  collideCircle(G.city, p, PLAYER.radius);
-  v.driver = 'parked';
-  v.speed = 0;
-  v.vx = 0;
-  v.vz = 0;
-  p.driving = null;
-  G.audio.click();
-}
-
-export function damagePlayer(G, amount, source) {
-  const p = G.player;
-  if (p.dead || p.invulnT > 0 || G.shotMode) return;
-  p.health -= amount;
-  p.regenT = 0;
-  p.invulnT = 0.25;
-  G.damageFlash = 0.7;
-  addShake(G, 0.35);
-  G.audio.hit();
-  if (p.health <= 0) {
-    p.health = 0;
-    p.dead = true;
-    p.deadT = 0;
-    if (p.driving) {
-      p.driving.driver = 'parked';
-      p.driving.speed = 0;
-      p.driving = null;
+  let bestD = range;
+  for (const car of S.cars) {
+    if (car.dead) continue;
+    const d = dist(x, y, car.x, car.y);
+    if (d < bestD) {
+      bestD = d;
+      best = car;
     }
   }
-  void source;
+  return best;
 }
 
-export function respawnPlayer(G, place) {
-  const p = G.player;
-  p.x = place.x;
-  p.z = place.z;
-  p.health = p.maxHealth;
-  p.dead = false;
-  p.deadT = 0;
-  p.invulnT = 2;
-  p.driving = null;
-  G.damageFlash = 0;
+function tryEnterExit(S, player) {
+  if (player.entering > 0) return;
+  if (player.car) {
+    // Step out on the side with open ground.
+    const car = player.car;
+    const side = Math.PI / 2;
+    for (const s of [side, -side]) {
+      const px = car.x + Math.cos(car.heading + s) * 44;
+      const py = car.y + Math.sin(car.heading + s) * 44;
+      const fixed = collideCircle(S.city, px, py, FOOT.radius);
+      if (!fixed.hit || dist(fixed.x, fixed.y, px, py) < 4) {
+        player.x = fixed.x;
+        player.y = fixed.y;
+        break;
+      }
+    }
+    player.car = null;
+    player.vx = 0;
+    player.vy = 0;
+    player.entering = 0.35;
+    S.audio.ui();
+    return;
+  }
+  const car = nearestCar(S, player.x, player.y, CAR.enterRange);
+  if (!car) return;
+  if (car.driver) {
+    // Steal it: the driver bails and runs.
+    car.driver = false;
+    S.addHeat(25);
+    S.spawnFleeingPed(car.x, car.y);
+    S.audio.honk();
+  }
+  car.parked = false;
+  player.car = car;
+  player.entering = 0.35;
+  // Getting in breaks the corner: the bust meter filled on foot must not
+  // carry over and bust the player a heartbeat after the getaway starts.
+  // The police have to re-corner the car from scratch.
+  if (S.wanted) S.wanted.bustT = 0;
+  S.audio.ui();
+}
+
+export function damagePlayer(S, amount, fromX, fromY) {
+  const player = S.player;
+  if (player.health <= 0) return;
+  player.health = Math.max(0, player.health - amount);
+  player.hurtT = 0.6;
+  player.lastDamageT = S.time;
+  S.fx.shake(clamp(amount / 60, 0.1, 0.4));
+  if (player.health <= 0) S.events.push('wasted');
+}
+
+export function stepPlayer(S, input, dt, actions) {
+  const player = S.player;
+  player.punchCd = Math.max(0, player.punchCd - dt);
+  player.shotCd = Math.max(0, player.shotCd - dt);
+  player.hurtT = Math.max(0, player.hurtT - dt);
+  player.entering = Math.max(0, player.entering - dt);
+  if (actions & 4) tryEnterExit(S, player);
+  if (player.car) stepDriving(S, player, input, dt);
+  else stepOnFoot(S, player, input, dt);
+  if (S.time - player.lastDamageT > HEALTH.regenDelay && player.health > 0 && player.health < HEALTH.regenCap) {
+    player.health = Math.min(HEALTH.regenCap, player.health + HEALTH.regenRate * dt);
+  }
 }
