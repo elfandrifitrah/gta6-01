@@ -1,105 +1,111 @@
-// Jakarta Heat: every tuning number, colour and story figure in one place.
+// Jakarta Heat: every tuning number, colour and story constant in one place.
+// The world is a fixed 2600x2000 unit city; the renderer shows a 1280x720 window of it.
 
-export const STEP = 1 / 60;
+export const VIEW = { width: 1280, height: 720 };
+export const TICK = 1 / 60;
+export const WORLD = { width: 2600, height: 2000 };
+
+export const START_CASH = 250;
+export const DEBT = 5000;
+export const PAYOUTS = [800, 1200, 1500, 1500];
+export const MISSION_NAMES = ['Macet Total', 'Kopor Hilang', 'Balap Liar', 'Jebakan di Pelabuhan'];
+
 export const SAVE_KEY = 'jakarta-heat.save.v1';
 
-export const WORLD = {
-  half: 240,
-  gap: 60,
-  roadHalf: 7,
-  avenueHalf: 12,
-  avenueX: 0,
-  waterX: 232,
-  skylineR: 285,
-};
-
-/** The story's money: Bimo starts with $250, owes $5,000, and the four payouts clear it. */
-export const CASH = { start: 250, debt: 5000, payouts: [800, 1200, 1500, 1500] };
-
-export const MISSION_TITLES = ['Macet Total', 'Kopor Hilang', 'Balap Liar', 'Jebakan di Pelabuhan'];
-
-export const PLAYER = {
-  walk: 7,
-  run: 11.5,
-  radius: 0.7,
-  health: 100,
-  punchDamage: 22,
-  punchRange: 2.6,
-  punchGap: 0.45,
-  shotDamage: 34,
-  shotRange: 70,
-  fireGap: 0.28,
-  regen: 5,
-  regenDelay: 5,
+export const FOOT = {
+  walk: 175,
+  run: 265,
+  accel: 1400,
+  radius: 15,
+  punchRange: 52,
+  punchDamage: 34,
+  punchCooldown: 0.38,
 };
 
 export const CAR = {
-  accel: 17,
-  brake: 28,
-  reverseMax: 9,
-  top: 34,
-  grip: 5.5,
-  steer: 2.5,
-  radius: 2.3,
-  offroadDrag: 1.6,
+  accel: 430,
+  brake: 700,
+  reverseMax: 170,
+  maxSpeed: 520,
+  raceMaxSpeed: 650,
+  turn: 2.6,
+  grip: 6.5,
+  driftGrip: 2.2,
+  radius: 30,
+  enterRange: 78,
 };
 
-export const WANTED = { max: 5, bustTime: 3.2, evadeSight: 80, evadeTime: 8, decayTime: 5 };
+export const HEALTH = { max: 100, regenDelay: 8, regenRate: 9, regenCap: 50 };
 
-export const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+export const WANTED = {
+  heatPerStar: 100,
+  maxStars: 5,
+  decayPerSecond: 7,
+  evadeDelay: 5,
+  evadeDecay: 26,
+  // 4.5s of slow cornering before a bust: the escape route forces slow
+  // turns with police glued behind, and 2.2s busted a fleeing player
+  // mid-turn in four of five full verification runs. Flooring the
+  // throttle never fills the meter, so this only catches a player who
+  // genuinely stops or gives up next to a patrol car.
+  bustTime: 4.5,
+  bustFine: 150,
+  deathFine: 100,
+};
 
-/** Golden hour over Jakarta: violet sky, ember horizon, warm haze. */
+export const COMBAT = {
+  pistolDamage: 40,
+  pistolRange: 540,
+  pistolCooldown: 0.3,
+  startAmmo: 24,
+  guardDamage: 9,
+  guardRange: 520,
+  goonDamage: 8,
+};
+
+// Golden hour: warm ground, amber light, teal glass, long soft shadows.
 export const PALETTE = {
-  skyTop: [46, 30, 78],
-  skyMid: [150, 62, 74],
-  horizon: [255, 154, 61],
-  sun: [255, 217, 138],
-  haze: [232, 149, 106],
-  ground: [104, 88, 66],
-  grass: [96, 104, 58],
-  road: [52, 50, 58],
-  roadLine: [214, 190, 130],
-  sidewalk: [141, 130, 112],
-  plaza: [168, 148, 122],
-  port: [110, 108, 104],
-  water: [64, 84, 128],
-  waterHi: [255, 190, 120],
-  lampGlow: [255, 200, 120],
+  groundDirt: '#b99a6d',
+  groundGrass: '#7d8f57',
+  groundPlaza: '#c8b18a',
+  groundDock: '#8d8578',
+  asphalt: '#4c4a52',
+  asphaltDark: '#403e46',
+  sidewalk: '#b3a58d',
+  lane: '#e8d9a8',
+  water: '#2e6f8e',
+  waterDeep: '#245a76',
+  wallCream: '#e6d6b8',
+  wallTerra: '#c96f4a',
+  wallBrick: '#a85f43',
+  wallGlass: '#3f7d8c',
+  wallSlate: '#6e7683',
+  roofTile: '#b4552d',
+  roofFlat: '#8a8073',
+  roofDark: '#5d564c',
+  faceSouth: '#8a6f52',
+  faceEast: '#6f5a44',
+  shadow: 'rgba(52,28,16,0.34)',
+  text: '#f5efe2',
+  muted: '#c9bda6',
+  gold: '#f2c14e',
+  goldDeep: '#c98f1f',
+  panel: 'rgba(24,18,14,0.82)',
+  panelEdge: 'rgba(242,193,78,0.55)',
+  danger: '#e5534b',
+  policeRed: '#ff4d4d',
+  policeBlue: '#4da6ff',
+  marker: '#ffd94d',
+  health: '#7bc950',
+  playerJacket: '#2e8f8a',
+  playerSkin: '#c68e5f',
 };
 
-export const BUILDING_COLORS = [
-  [214, 190, 160], [196, 172, 140], [178, 150, 122], [150, 132, 116],
-  [188, 164, 132], [160, 140, 128], [140, 148, 160], [206, 178, 142],
-  [172, 128, 104], [148, 118, 96], [190, 186, 172], [156, 134, 110],
-];
-
-export const TOWER_COLORS = [
-  [120, 128, 148], [104, 116, 140], [136, 128, 118], [96, 108, 128],
-  [150, 140, 124], [112, 100, 92],
-];
-
-export const SHIRT_COLORS = [
-  [200, 70, 60], [60, 120, 190], [220, 180, 60], [70, 160, 90],
-  [180, 90, 150], [230, 230, 220], [60, 60, 70], [220, 120, 50],
-  [90, 170, 170], [150, 60, 60], [80, 100, 160], [190, 200, 90],
-];
-
-export const CAR_COLORS = [
-  [200, 200, 205], [40, 42, 48], [150, 30, 30], [30, 60, 130],
-  [180, 180, 170], [90, 100, 110], [200, 140, 40], [60, 90, 70],
-];
+export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const FONT_NUM = '"SF Mono", "Cascadia Mono", Consolas, monospace';
 
 export const SIGN_TEXTS = [
-  ['WARUNG', 'nasi goreng · kopi'],
-  ['KOPI', 'kopi tubruk'],
-  ['BAKSO', 'bakso sapi'],
-  ['TOKO', 'kelontong 24 jam'],
-  ['NASI PADANG', 'rendang · ayam pop'],
-  ['BENGKEL', 'las · tambal ban'],
-  ['APOTEK', 'obat · vitamin'],
-  ['SATE', 'sate ayam madura'],
-  ['MARTABAK', 'manis · telur'],
-  ['GADO-GADO', 'sayur · lontong'],
-  ['ES TEH', 'manis dingin'],
-  ['FOTOCOPY', 'print · jilid'],
+  'KOPI SENJA', 'WARUNG BU RATNA', 'HOTEL SENJA', 'BANK NUSANTARA', 'MAL SENJA',
+  'BIOSKOP REX', 'PASAR PAGI', 'APOTEK SEHAT', 'TOKO BUKU', 'NASI GORENG 88',
+  'GUDANG 7', 'BENGKEL JAYA', 'FOTO CERIA', 'ROTIBAKAR 24', 'SELAMAT DATANG',
 ];
