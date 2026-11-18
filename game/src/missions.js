@@ -1,352 +1,345 @@
-// The story: four missions that pay Bimo's $5,000 debt to Bu Ratna, in order. Each
-// mission is a list of stages with a setup and a completion test; the marker, the
-// objective text and the payout all flow from the current stage.
+// The story: four missions for Bu Ratna, each a short chain of steps — reach
+// a place, get in a car, take someone down, collect something, hit race gates.
+// Steps set the HUD marker and objective; completing a mission pays out,
+// saves, and opens the next one. Failing a timer restarts the mission.
 
-import { CASH, MISSION_TITLES, SAVE_KEY } from './config.js';
-import { dist2 } from './vec.js';
-import { say, showBanner } from './hud.js';
-import { spawnEnemy } from './combat.js';
-import { makeVehicle } from './traffic.js';
-import { addWanted } from './wanted.js';
-import { spawnFloater } from './effects.js';
+import { PAYOUTS, MISSION_NAMES } from './config.js';
+import { dist } from './vec.js';
+import { findFreeSpot } from './city.js';
+import { makeCar, setJam } from './traffic.js';
+import { spawnThief, spawnGoon, spawnGuard } from './enemies.js';
+import { spawnPickup } from './combat.js';
+import { addHeat } from './wanted.js';
 
-function gotoStage(text, point, radius, needVehicle) {
-  return {
-    text,
-    setup(G) { G.marker = { x: point.x, z: point.z }; },
-    done(G) {
-      const p = G.player;
-      if (needVehicle && !p.driving) return false;
-      return dist2(p.x, p.z, point.x, point.z) < radius;
-    },
-  };
-}
-
-function enterStage(text, car) {
-  return {
-    text,
-    setup(G) { G.marker = { x: car.x, z: car.z }; },
-    done(G) { return G.player.driving === car; },
-  };
-}
-
-function killStage(text, enemies) {
-  return {
-    text,
-    setup(G) { G.marker = null; },
-    marker(G) {
-      const alive = enemies.find((e) => !e.dead);
-      if (alive) G.marker = { x: alive.x, z: alive.z };
-      else G.marker = null;
-    },
-    done() { return enemies.every((e) => e.dead); },
-  };
-}
-
-function pickupStage(text, item) {
-  return {
-    text,
-    setup(G) { G.marker = { x: item.x, z: item.z }; },
-    done(G) {
-      if (item.taken) return true;
-      if (dist2(G.player.x, G.player.z, item.x, item.z) < 2.6) {
-        item.taken = true;
-        G.audio.pickup();
-        spawnFloater(G, item.x, 2.2, item.z, item.label, '#ffd257');
-        return true;
-      }
-      return false;
-    },
-  };
-}
-
-const RACE_GATES = [
-  { x: 0, z: -110 }, { x: 110, z: -120 }, { x: 120, z: 110 }, { x: 0, z: 120 }, { x: 0, z: 80 },
+const STEP_DEFS = [
+  {
+    intro: 'Bu Ratna needs a package across town. The avenue is jammed solid.',
+    steps: [
+      { type: 'enterCar', text: "Get in Bu Ratna's car" },
+      { type: 'reach', text: 'Deliver the package to the Thamrin drop', marker: 'dropNorth', radius: 75, timer: 95, jam: true },
+    ],
+  },
+  {
+    intro: 'A courier lost Bu Ratna\'s suitcase in the kampung. Someone took it.',
+    steps: [
+      { type: 'reach', text: 'Find the courier in the kampung alleys', marker: 'kampungAlley', radius: 65 },
+      { type: 'defeat', text: 'Catch the thief — take him down' },
+      { type: 'collect', text: 'Pick up the suitcase', flag: 'suitcase' },
+      { type: 'reach', text: 'Bring the suitcase back to Bu Ratna', marker: 'warung', radius: 75 },
+    ],
+  },
+  {
+    intro: 'A street race on the avenue loop. Bu Ratna bet on you. Do not lose.',
+    steps: [
+      { type: 'enterCar', text: 'Get in the race car at the start line', race: true },
+      { type: 'gates', text: 'Hit every gate before the clock runs out', timer: 130 },
+    ],
+  },
+  {
+    intro: 'A ledger sits in a port container. It is a trap. Go anyway.',
+    steps: [
+      { type: 'reach', text: 'Drive to the warehouse at the port', marker: 'portYard', radius: 85 },
+      { type: 'defeat', text: 'The trap is sprung — clear the yard' },
+      { type: 'collect', text: 'Take the ledger from the container', flag: 'ledger' },
+      { type: 'escape', text: 'The police are coming — escape to Bu Ratna', marker: 'warung', radius: 75 },
+    ],
+  },
 ];
 
-function buildStages(G, index) {
-  const P = G.city.places;
-  if (index === 0) {
-    const car = makeVehicle(G, 'sedan', P.missionCar.x, P.missionCar.z, Math.PI, 'mission');
-    car.color = [36, 56, 120];
-    G.vehicles.push(car);
-    return [
-      enterStage('Get in the marked car by the warung.', car),
-      gotoStage('Drive through the jam to the first checkpoint.', { x: 0, z: -60 }, 11, true),
-      gotoStage('Keep going: second checkpoint on the cross street.', { x: 60, z: -120 }, 11, true),
-      {
-        text: 'Deliver the package to the contact at the plaza.',
-        setup(G2) {
-          G2.marker = { x: P.plazaContact.x, z: P.plazaContact.z };
-          addWanted(G2, 1, 'spotted');
-          say(G2, 'A patrol spotted the car. Deliver fast.', '#ff8a7a');
-        },
-        done(G2) { return dist2(G2.player.x, G2.player.z, P.plazaContact.x, P.plazaContact.z) < 8; },
-      },
-    ];
-  }
-  if (index === 1) {
-    const thugs = [];
-    const suitcase = { kind: 'suitcase', label: 'Suitcase recovered', x: P.suitcase.x, z: P.suitcase.z, taken: false };
-    return [
-      {
-        text: 'Go to the kampung alley where the thieves hide.',
-        setup(G2) {
-          G2.marker = { x: P.kampungAlley.x, z: P.kampungAlley.z };
-          thugs.push(spawnEnemy(G2, P.kampungAlley.x - 4, P.kampungAlley.z - 3, 'fist', 60));
-          thugs.push(spawnEnemy(G2, P.kampungAlley.x + 4, P.kampungAlley.z + 2, 'fist', 60));
-          thugs.push(spawnEnemy(G2, P.kampungAlley.x + 1, P.kampungAlley.z + 6, 'pistol', 50));
-        },
-        done(G2) { return dist2(G2.player.x, G2.player.z, P.kampungAlley.x, P.kampungAlley.z) < 11; },
-      },
-      killStage('Take back the suitcase: deal with the thieves.', thugs),
-      {
-        text: 'Pick up the suitcase.',
-        setup(G2) {
-          G2.items.push(suitcase);
-          G2.marker = { x: suitcase.x, z: suitcase.z };
-        },
-        done(G2) {
-          if (suitcase.taken) return true;
-          if (dist2(G2.player.x, G2.player.z, suitcase.x, suitcase.z) < 2.6) {
-            suitcase.taken = true;
-            G2.audio.pickup();
-            spawnFloater(G2, suitcase.x, 2.2, suitcase.z, 'Suitcase recovered', '#ffd257');
-            addWanted(G2, 1, 'reported');
-            say(G2, 'Someone called the police.', '#ff8a7a');
-            return true;
-          }
-          return false;
-        },
-      },
-      gotoStage('Bring the suitcase to Bu Ratna.', P.warung, 8, false),
-    ];
-  }
-  if (index === 2) {
-    const car = makeVehicle(G, 'race', P.raceStart.x, P.raceStart.z, Math.PI, 'mission');
-    G.vehicles.push(car);
-    const racers = [];
-    return [
-      enterStage('Get in the race car at the start line.', car),
-      {
-        text: 'Race: hit every gate before the rivals do.',
-        objectiveText(G2) { return `Race: gate ${Math.min(G2.racePlayerGate + 1, G2.raceGates.length)} of ${G2.raceGates.length}. Beat the rivals.`; },
-        setup(G2) {
-          G2.raceGates = RACE_GATES.map((g) => ({ ...g, passed: false }));
-          G2.racePlayerGate = 0;
-          G2.marker = { x: RACE_GATES[0].x, z: RACE_GATES[0].z };
-          for (const ox of [-6, 6]) {
-            const r = makeVehicle(G2, 'race', P.raceStart.x + ox, P.raceStart.z + 8, Math.PI, 'racer');
-            G2.vehicles.push(r);
-            racers.push(r);
-          }
-          say(G2, 'GO! Beat the rivals through every gate.', '#ffd257');
-          G2.audio.horn();
-        },
-        marker(G2) {
-          const g = G2.raceGates[G2.racePlayerGate];
-          G2.marker = g ? { x: g.x, z: g.z } : null;
-        },
-        done(G2) {
-          const g = G2.raceGates[G2.racePlayerGate];
-          if (g && dist2(G2.player.x, G2.player.z, g.x, g.z) < 9) {
-            g.passed = true;
-            G2.racePlayerGate += 1;
-            G2.audio.pickup();
-            if (G2.racePlayerGate >= G2.raceGates.length) {
-              if (racers.some((r) => r.finished)) {
-                failMission(G2, 'A rival beat you to the finish.');
-                return false;
-              }
-              return true;
-            }
-            say(G2, `Checkpoint ${G2.racePlayerGate} of ${G2.raceGates.length}.`, '#9fe08a');
-          }
-          if (racers.some((r) => r.finished) && G2.racePlayerGate < G2.raceGates.length) {
-            failMission(G2, 'A rival beat you to the finish.');
-          }
-          return false;
-        },
-      },
-    ];
-  }
-  const guards = [];
-  const ledger = { kind: 'ledger', label: 'Ledger taken', x: P.ledger.x, z: P.ledger.z, taken: false };
-  const escapeCar = makeVehicle(G, 'sedan', P.escapeCar.x, P.escapeCar.z, Math.PI / 2, 'mission');
-  escapeCar.color = [160, 40, 36];
-  G.vehicles.push(escapeCar);
-  return [
-    {
-      text: 'Drive to the port warehouse.',
-      setup(G2) {
-        G2.marker = { x: P.portGate.x, z: P.portGate.z };
-        // Guards stand outside the warehouse walls: the footprint is 22 by 30, so
-        // offsets inside it would trap them against the colliders.
-        guards.push(spawnEnemy(G2, P.warehouse.x - 14, P.warehouse.z - 10, 'pistol', 55));
-        guards.push(spawnEnemy(G2, P.warehouse.x + 14, P.warehouse.z - 6, 'pistol', 55));
-        guards.push(spawnEnemy(G2, P.warehouse.x - 13, P.warehouse.z + 10, 'fist', 65));
-        guards.push(spawnEnemy(G2, P.warehouse.x + 13, P.warehouse.z + 8, 'pistol', 55));
-        guards.push(spawnEnemy(G2, P.warehouse.x, P.warehouse.z + 22, 'pistol', 120));
-      },
-      done(G2) { return dist2(G2.player.x, G2.player.z, P.portGate.x, P.portGate.z) < 13; },
-    },
-    killStage('Clear the guards at the warehouse.', guards),
-    {
-      text: 'Take the ledger from the warehouse.',
-      setup(G2) {
-        G2.items.push(ledger);
-        G2.marker = { x: ledger.x, z: ledger.z };
-      },
-      done(G2) {
-        if (ledger.taken) return true;
-        if (dist2(G2.player.x, G2.player.z, ledger.x, ledger.z) < 2.6) {
-          ledger.taken = true;
-          G2.audio.pickup();
-          spawnFloater(G2, ledger.x, 2.2, ledger.z, 'Ledger taken', '#ffd257');
-          addWanted(G2, 2, 'port alarm');
-          say(G2, 'The alarm is up. The whole port is coming.', '#ff8a7a');
-          return true;
-        }
-        return false;
-      },
-    },
-    enterStage('Escape: get in the car by the quay.', escapeCar),
-    gotoStage('Reach Bu Ratna with the ledger.', P.warung, 8, false),
-  ];
+export function createMissions() {
+  return { index: 0, stepIdx: 0, timer: 0, data: {}, active: true, spawns: [] };
 }
 
-function cleanupMission(G) {
-  G.enemies.length = 0;
-  G.items.length = 0;
-  G.raceGates = [];
-  G.racePlayerGate = 0;
-  for (let i = G.vehicles.length - 1; i >= 0; i -= 1) {
-    const v = G.vehicles[i];
-    if (v.driver === 'mission' || v.driver === 'racer') G.vehicles.splice(i, 1);
-  }
-  G.marker = null;
+function trackSpawn(S, ref) {
+  S.mission.spawns.push(ref);
 }
 
-export function startMission(G, index) {
-  cleanupMission(G);
-  const stages = buildStages(G, index);
-  G.mission = { index, stages, stage: 0, stageT: 0, active: true };
-  const first = stages[0];
-  first.setup(G);
-  say(G, `Mission: ${MISSION_TITLES[index]}. ${first.text}`, '#ffd257');
-  updateObjective(G);
-}
-
-export function failMission(G, why) {
-  if (!G.mission || !G.mission.active) return;
-  G.mission.active = false;
-  showBanner(G, 'MISSION FAILED', why);
-  G.audio.fail();
-  const index = G.mission.index;
-  G.retryMission = { index, t: 2.2 };
-}
-
-export function completeMission(G) {
-  const m = G.mission;
-  const pay = CASH.payouts[m.index];
-  G.cash += pay;
-  showBanner(G, 'MISSION COMPLETE', `+$${pay.toLocaleString('en-US')} · ${MISSION_TITLES[m.index]}`);
-  G.audio.complete();
-  spawnFloater(G, G.player.x, 2.6, G.player.z, `+$${pay}`, '#9fe08a');
-  say(G, `Bu Ratna pays $${pay}. Cash $${G.cash.toLocaleString('en-US')} of $${CASH.debt.toLocaleString('en-US')}.`, '#9fe08a');
-  m.active = false;
-  const next = m.index + 1;
-  if (next >= MISSION_TITLES.length) {
-    G.storyDone = true;
-    G.storyPending = true;
-    saveGame(G);
-    return;
-  }
-  // Keep the completed mission object until the next one starts: the HUD, the state
-  // hook and the retry timer all stay coherent through the banner window.
-  G.retryMission = { index: next, t: 2.4, fresh: true };
-  saveGame(G);
-}
-
-export function updateMissions(G, dt) {
-  if (G.retryMission) {
-    G.retryMission.t -= dt;
-    if (G.retryMission.t <= 0) {
-      const next = G.retryMission.index;
-      G.retryMission = null;
-      startMission(G, next);
+function clearSpawns(S) {
+  for (const ref of S.mission.spawns) {
+    if (ref && typeof ref === 'object') {
+      if ('hp' in ref && 'kind' in ref && ref.kind !== undefined && 'maxHp' in ref) ref.dead = true;
+      else if ('w' in ref) ref.dead = true;
     }
-    return;
   }
-  const m = G.mission;
-  if (!m || !m.active) {
-    updateObjective(G);
-    return;
+  S.cars = S.cars.filter((c) => !c.dead);
+  S.enemies.list = S.enemies.list.filter((e) => !e.dead);
+  S.mission.spawns = [];
+  S.rivals = [];
+}
+
+function spawnMissionCar(S, x, y, heading, color, race) {
+  const car = makeCar('sedan', x, y, heading, color);
+  car.parked = true;
+  car.driver = false;
+  car.missionCar = true;
+  car.race = !!race;
+  S.cars.push(car);
+  trackSpawn(S, car);
+  return car;
+}
+
+function setupStep(S) {
+  const def = STEP_DEFS[S.mission.index];
+  const step = def.steps[S.mission.stepIdx];
+  const data = S.mission.data;
+  const markers = S.city.markers;
+  S.mission.timer = step.timer || 0;
+  S.objective = step.text;
+  if (step.marker) {
+    const m = markers[step.marker];
+    S.marker = { x: m.x, y: m.y, r: step.radius || 60 };
+  } else {
+    S.marker = null;
   }
-  m.stageT += dt;
-  const stage = m.stages[m.stage];
-  if (!stage) return;
-  if (stage.marker) stage.marker(G);
-  if (stage.done(G)) {
-    m.stage += 1;
-    m.stageT = 0;
-    if (m.stage >= m.stages.length) {
-      completeMission(G);
+
+  if (S.mission.index === 0 && S.mission.stepIdx === 0) {
+    const spot = findFreeSpot(S.city, 1236, 900, 26);
+    data.car = spawnMissionCar(S, spot.x, spot.y, -Math.PI / 2, '#d8b13c', false);
+  }
+  if (S.mission.index === 0 && S.mission.stepIdx === 1) {
+    setJam(S, true);
+  }
+  if (S.mission.index === 1 && S.mission.stepIdx === 1) {
+    data.thief = spawnThief(S, 2100, 620);
+    trackSpawn(S, data.thief);
+    trackSpawn(S, spawnGoon(S, 2040, 560));
+    trackSpawn(S, spawnGoon(S, 2180, 700));
+    data.dropped = false;
+  }
+  if (S.mission.index === 2 && S.mission.stepIdx === 0) {
+    data.car = spawnMissionCar(S, 1300, 1500, -Math.PI / 2, '#a83a32', true);
+  }
+  if (S.mission.index === 2 && S.mission.stepIdx === 1) {
+    data.gateIdx = 0;
+    data.gates = S.city.raceGates;
+    S.raceProgress = { hit: 0, total: data.gates.length };
+    // Clear the starting grid first. Traffic cars that overlap the grid
+    // grind against the race car and the rivals, drain their health to
+    // zero before the flag drops, and shove the player off the route.
+    // Pushed cars keep their routes and drive back on their own.
+    for (const other of S.cars) {
+      if (other === S.player.car) continue;
+      const dd = Math.hypot(other.x - 1300, other.y - 1600);
+      if (dd < 150) {
+        other.y = Math.min(1900, Math.max(100, other.y + (other.y >= 1600 ? 220 : -220)));
+        other.vx = 0;
+        other.vy = 0;
+      }
+    }
+    const rivalColors = ['#3a5a8c', '#e8e4da', '#5a7a4a'];
+    const grid = [[1267, 1570], [1333, 1570], [1300, 1640]];
+    S.rivals = [];
+    for (let i = 0; i < 3; i += 1) {
+      const car = makeCar('sedan', grid[i][0], grid[i][1], -Math.PI / 2, rivalColors[i]);
+      car.rival = true;
+      car.race = true;
+      car.driver = false;
+      car.gateIdx = 0;
+      S.cars.push(car);
+      S.rivals.push(car);
+      trackSpawn(S, car);
+    }
+    const g = data.gates[0];
+    S.marker = { x: g.x, y: g.y, r: 60 };
+  }
+  if (S.mission.index === 3 && S.mission.stepIdx === 0) {
+    S.player.hasPistol = true;
+    S.player.ammo = Math.max(S.player.ammo, 24);
+    S.showBanner('Bu Ratna lends you her pistol', 'Click to shoot. F to punch.', 3);
+  }
+  if (S.mission.index === 3 && S.mission.stepIdx === 1) {
+    data.guards = [];
+    for (const post of S.city.guardPosts) {
+      const guard = spawnGuard(S, post.x, post.y);
+      data.guards.push(guard);
+      trackSpawn(S, guard);
+    }
+  }
+  if (S.mission.index === 3 && S.mission.stepIdx === 2) {
+    const m = markers.ledger;
+    spawnPickup(S, 'ledger', m.x, m.y);
+    S.marker = { x: m.x, y: m.y, r: 55 };
+  }
+  if (S.mission.index === 3 && S.mission.stepIdx === 3) {
+    addHeat(S, 300);
+    S.showBanner('The police are coming', 'Get back to Bu Ratna, fast.', 3);
+  }
+}
+
+export function setupMission(S, index) {
+  S.mission.index = index;
+  S.mission.stepIdx = 0;
+  S.mission.data = {};
+  S.mission.active = true;
+  S.flags.suitcase = false;
+  S.flags.ledger = false;
+  setupStep(S);
+  S.showBanner(MISSION_NAMES[index], STEP_DEFS[index].intro, 3.4);
+}
+
+export function jumpToMission(S, index) {
+  clearSpawns(S);
+  setJam(S, false);
+  setupMission(S, index);
+}
+
+/** Walk a mission forward to a given step for screenshot staging: cars are
+ * boarded and markers reached without payouts, so the staged scene is real. */
+export function stageAt(S, index, stepIdx) {
+  clearSpawns(S);
+  setJam(S, false);
+  S.mission.index = index;
+  S.mission.stepIdx = 0;
+  S.mission.data = {};
+  S.mission.active = true;
+  setupStep(S);
+  while (S.mission.stepIdx < stepIdx) {
+    const step = STEP_DEFS[index].steps[S.mission.stepIdx];
+    const data = S.mission.data;
+    if (step.type === 'enterCar' && data.car) {
+      S.player.car = data.car;
+      data.car.parked = false;
+      S.player.x = data.car.x;
+      S.player.y = data.car.y;
+    }
+    if ((step.type === 'reach' || step.type === 'escape') && S.marker) {
+      S.player.x = S.marker.x;
+      S.player.y = S.marker.y;
+      if (S.player.car) {
+        S.player.car.x = S.marker.x;
+        S.player.car.y = S.marker.y;
+      }
+    }
+    S.mission.stepIdx += 1;
+    setupStep(S);
+  }
+  S.banner = null;
+}
+
+function failMission(S, reason) {
+  S.audio.fail();
+  S.showBanner('Failed', reason, 2.6);
+  clearSpawns(S);
+  setJam(S, false);
+  S.mission.data = {};
+  S.mission.stepIdx = 0;
+  setupStep(S);
+}
+
+export function resetCurrentMission(S) {
+  if (!S.mission.active || S.mission.index >= 4) return;
+  clearSpawns(S);
+  setJam(S, false);
+  S.mission.data = {};
+  S.mission.stepIdx = 0;
+  setupStep(S);
+}
+
+function completeStep(S) {
+  const def = STEP_DEFS[S.mission.index];
+  S.audio.coin();
+  if (S.mission.stepIdx === 0 && S.mission.index === 0) setJam(S, false);
+  S.mission.stepIdx += 1;
+  if (S.mission.stepIdx >= def.steps.length) {
+    const payout = PAYOUTS[S.mission.index];
+    S.cash += payout;
+    S.stats.missionsDone += 1;
+    S.audio.jingle();
+    S.showBanner(`Mission complete  +$${payout}`, MISSION_NAMES[S.mission.index], 3.2);
+    S.events.push('missionComplete');
+    setJam(S, false);
+    S.mission.index += 1;
+    S.mission.stepIdx = 0;
+    S.mission.data = {};
+    if (S.mission.index >= 4) {
+      S.mission.active = false;
+      S.objective = 'Free roam — Jakarta is yours.';
+      S.marker = null;
+      S.events.push('storyDone');
     } else {
-      const next = m.stages[m.stage];
-      next.setup(G);
-      say(G, next.text, '#ffffff');
-    }
-  }
-  updateObjective(G);
-}
-
-export function updateObjective(G) {
-  const m = G.mission;
-  if (!m || !m.active || !m.stages[m.stage]) {
-    if (G.storyDone) {
-      G.objective = { title: 'Debt paid', text: 'Free roam. Jakarta is yours.', dist: 0 };
-    } else if (m && m.stages.length) {
-      G.objective = { title: MISSION_TITLES[m.index], text: 'Mission complete.', dist: 0 };
-    } else {
-      G.objective = { title: '', text: '', dist: 0 };
+      setupMission(S, S.mission.index);
     }
     return;
   }
-  const stage = m.stages[m.stage];
-  let dist = 0;
-  if (G.marker) dist = Math.round(dist2(G.player.x, G.player.z, G.marker.x, G.marker.z));
-  const text = typeof stage.objectiveText === 'function' ? stage.objectiveText(G) : stage.text;
-  G.objective = { title: MISSION_TITLES[m.index], text, dist };
+  setupStep(S);
 }
 
-export function saveGame(G) {
-  try {
-    const data = {
-      cash: G.cash,
-      mission: G.mission ? G.mission.index : 0,
-      storyDone: !!G.storyDone,
-      x: G.player.x,
-      z: G.player.z,
-    };
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch (e) { /* storage can be off; the game still runs */ }
-}
+const RIVAL_ROUTE = [
+  [1300, 1000], [1300, 360], [1700, 360], [2080, 360], [2080, 700], [2080, 1400],
+  [2080, 1640], [1700, 1640], [900, 1640], [520, 1640], [520, 1300], [520, 1640],
+  [1300, 1640], [1300, 1500],
+];
 
-export function loadGame() {
-  try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (typeof data.cash !== 'number' || typeof data.mission !== 'number') return null;
-    return data;
-  } catch (e) {
-    return null;
+function stepRivals(S, dt) {
+  const gates = RIVAL_ROUTE;
+  for (const car of S.rivals) {
+    if (car.gateIdx >= gates.length) {
+      car.speed = Math.max(0, car.speed - 200 * dt);
+      continue;
+    }
+    const g = gates[car.gateIdx];
+    const d = dist(car.x, car.y, g[0], g[1]);
+    if (d < 55) {
+      car.gateIdx += 1;
+      continue;
+    }
+    const want = Math.atan2(g[1] - car.y, g[0] - car.x);
+    let diff = want - car.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    car.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+    car.speed = Math.min(305, car.speed + 240 * dt);
+    car.vx = Math.cos(car.heading) * car.speed;
+    car.vy = Math.sin(car.heading) * car.speed;
+    car.x += car.vx * dt;
+    car.y += car.vy * dt;
   }
 }
 
-export function clearSave() {
-  try { window.localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
-}
+export function stepMissions(S, dt) {
+  if (!S.mission.active || S.mission.index >= 4) return;
+  stepRivals(S, dt);
+  const step = STEP_DEFS[S.mission.index].steps[S.mission.stepIdx];
+  const data = S.mission.data;
+  const player = S.player;
 
-export { pickupStage };
+  if (step.timer) {
+    S.mission.timer -= dt;
+    if (S.mission.timer <= 0) {
+      failMission(S, 'Too slow — try again.');
+      return;
+    }
+  }
+
+  if (step.type === 'enterCar') {
+    if (data.car) S.marker = { x: data.car.x, y: data.car.y, r: 60 };
+    if (player.car === data.car) completeStep(S);
+  } else if (step.type === 'reach' || step.type === 'escape') {
+    if (S.marker && dist(player.x, player.y, S.marker.x, S.marker.y) < S.marker.r) completeStep(S);
+  } else if (step.type === 'defeat') {
+    if (S.mission.index === 1) {
+      if (data.thief && data.thief.dead && !data.dropped) {
+        data.dropped = true;
+        spawnPickup(S, 'suitcase', data.thief.x, data.thief.y);
+        spawnPickup(S, 'health', data.thief.x + 44, data.thief.y + 26);
+        completeStep(S);
+      }
+    } else if (S.mission.index === 3) {
+      if (data.guards && data.guards.every((g) => g.dead)) completeStep(S);
+    }
+  } else if (step.type === 'collect') {
+    if (S.flags[step.flag]) completeStep(S);
+  } else if (step.type === 'gates') {
+    const g = data.gates[data.gateIdx];
+    if (g) {
+      S.marker = { x: g.x, y: g.y, r: 60 };
+      if (dist(player.x, player.y, g.x, g.y) < 62) {
+        data.gateIdx += 1;
+        S.raceProgress.hit = data.gateIdx;
+        S.audio.coin();
+        S.fx.floatText(`Gate ${data.gateIdx}/${data.gates.length}`, player.x, player.y - 40, '#ffd94d');
+        if (data.gateIdx >= data.gates.length) completeStep(S);
+      }
+    }
+  }
+}
