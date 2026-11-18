@@ -1,6 +1,6 @@
-// Jakarta Heat: one home for every tuning number. The city is a 5 by 5
-// grid of blocks divided by roads. Coordinates are metres, +X east, +Z
-// south. Traffic keeps left, as in Indonesia. The bay lies to the south.
+// Jakarta Heat: all tuning numbers in one place. The city is a 5 by 5 grid
+// of blocks separated by roads. Coordinates are metres, +X east, +Z south.
+// Traffic keeps left, as in Indonesia. The bay lies to the south.
 export const SEED_DEFAULT = 20261117;
 
 // City geometry.
@@ -104,7 +104,7 @@ export const WASTE_PENALTY = 0.15;
 
 export const SAVE_KEY = 'jakarta-heat-save-v1';
 
-// Palette: tropical golden hour — warm haze, deep blue-glass towers,
+// Palette: tropical golden hour. Warm haze, deep blue-glass towers,
 // terracotta roofs, red-and-white flags.
 export const COLORS = {
   skyTop: 0x2e6fc4,
