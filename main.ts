@@ -1,13 +1,11 @@
-// Jakarta Heat: the entry program for gta6-01 (Node 22+, standard library
-// only). The game is this directory's game/ folder: plain static files a
-// desktop browser loads offline, game/index.html, its ES modules, and a
-// locally vendored three.js build. No CDN, no network request. This program
-// copies game/ and screenshots/ beside this file into the output directory
-// and writes dossier.json, the summary the judge reads, using the vendored
-// make.fun library. The dossier cap shapes how much source it carries.
+// Jakarta Heat's hand-in program (Node 22+, standard library only). The game is the
+// plain static files under game/, loaded offline by a desktop browser with no network
+// request, and this program hands it in: it copies game/ and screenshots/ beside this
+// file into the output directory and writes dossier.json, the summary the judge reads,
+// with the kit's vendored library.
 //
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
+// Play it locally with `node serve.ts`, then open http://localhost:8080.
+// Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -18,24 +16,23 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-function copyTree(source, dest) {
-  if (!existsSync(source)) return;
-  cpSync(source, dest, { recursive: true });
+function handIn() {
+  mkdirSync(outputDir, { recursive: true });
+  cpSync(join(repoRoot, 'game'), join(outputDir, 'game'), { recursive: true });
+  mkdirSync(join(outputDir, 'screenshots'), { recursive: true });
+  const shots = join(repoRoot, 'screenshots');
+  if (existsSync(shots)) cpSync(shots, join(outputDir, 'screenshots'), { recursive: true });
+  // The scorer's caps: the dossier text is capped at 160 KiB, screenshots at 4 files of
+  // 256 KiB, and game/ at 993 files and 48 MiB with paths under 1000 bytes.
+  const dossier = buildDossier(outputDir, {
+    text_max_bytes: 163840,
+    screenshots: { max: 4, max_bytes: 262144 },
+    game_max_files: 993,
+    game_max_bytes: 50331648,
+    game_path_max_bytes: 1000,
+  });
+  writeFileSync(join(outputDir, 'dossier.json'), dossier);
+  console.log(`Jakarta Heat handed in: dossier.json is ${dossier.length} bytes.`);
 }
 
-mkdirSync(outputDir, { recursive: true });
-copyTree(join(repoRoot, 'game'), join(outputDir, 'game'));
-mkdirSync(join(outputDir, 'screenshots'), { recursive: true });
-copyTree(join(repoRoot, 'screenshots'), join(outputDir, 'screenshots'));
-
-// The scorer's caps: at most 4 screenshots, each at most 256 KiB; at most
-// 993 files and 48 MiB under game/; no game path over 1000 bytes. The text
-// cap shapes how much source the dossier carries for the judge.
-const dossier = buildDossier(outputDir, {
-  text_max_bytes: 163840,
-  screenshots: { max: 4, max_bytes: 262144 },
-  game_max_files: 993,
-  game_max_bytes: 50331648,
-  game_path_max_bytes: 1000,
-});
-writeFileSync(join(outputDir, 'dossier.json'), dossier);
+handIn();
