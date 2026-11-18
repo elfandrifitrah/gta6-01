@@ -1,94 +1,81 @@
-// Keyboard and mouse state. The game loop reads held keys every frame and
-// edge-triggered presses through pressed(), which the loop clears each frame
-// with endFrame(). Right-drag orbits the camera; the wheel zooms it.
-export class Input {
-  constructor(canvas) {
-    this.keys = new Set();
-    this.justPressed = new Set();
-    this.mouseDown = false;
-    this.mouseClicked = false;
-    this.mouseX = 0;
-    this.mouseY = 0;
-    this.dragDX = 0;
-    this.dragDY = 0;
-    this.wheelDelta = 0;
-    this.dragging = false;
-    this.lastX = 0;
-    this.lastY = 0;
-    this.enabled = true;
+// Keyboard and mouse input. Held keys give movement axes; one-shot presses queue as bit
+// flags taken once per frame, so a press between frames is never lost or counted twice.
 
-    window.addEventListener('keydown', (event) => {
-      if (!this.enabled) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
-      if (!event.repeat) {
-        this.keys.add(event.code);
-        this.justPressed.add(event.code);
-      }
-    });
-    window.addEventListener('keyup', (event) => {
-      this.keys.delete(event.code);
-    });
-    window.addEventListener('blur', () => {
-      this.keys.clear();
-      this.mouseDown = false;
-      this.dragging = false;
-    });
-    canvas.addEventListener('mousedown', (event) => {
-      if (event.button === 0) {
-        this.mouseDown = true;
-        this.mouseClicked = true;
-      }
-      if (event.button === 2) {
-        this.dragging = true;
-        this.lastX = event.clientX;
-        this.lastY = event.clientY;
-      }
-    });
-    window.addEventListener('mouseup', (event) => {
-      if (event.button === 0) this.mouseDown = false;
-      if (event.button === 2) this.dragging = false;
-    });
-    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
-    window.addEventListener('mousemove', (event) => {
-      this.mouseX = event.clientX;
-      this.mouseY = event.clientY;
-      if (this.dragging) {
-        this.dragDX += event.clientX - this.lastX;
-        this.dragDY += event.clientY - this.lastY;
-        this.lastX = event.clientX;
-        this.lastY = event.clientY;
-      }
-    });
-    canvas.addEventListener('wheel', (event) => {
-      event.preventDefault();
-      this.wheelDelta += event.deltaY;
-    }, { passive: false });
-  }
+export const ACT = { CONFIRM: 1, PAUSE: 2, INTERACT: 4, PUNCH: 8, HORN: 16 };
 
-  down(code) {
-    return this.keys.has(code);
-  }
+const GAME_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'KeyF', 'KeyH', 'KeyP', 'Escape', 'Enter',
+]);
 
-  pressed(code) {
-    return this.justPressed.has(code);
-  }
+export function createInput(canvas) {
+  const keys = new Set();
+  let actions = 0;
+  let lookX = 0;
+  let lookY = 0;
+  let wheel = 0;
+  let mouseDown = false;
+  let mouseEdge = false;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  let dragDist = 0;
 
-  // Movement axes: x is strafe (right positive), y is forward (up positive).
-  axis() {
-    let x = 0;
-    let y = 0;
-    if (this.down('KeyA') || this.down('ArrowLeft')) x -= 1;
-    if (this.down('KeyD') || this.down('ArrowRight')) x += 1;
-    if (this.down('KeyW') || this.down('ArrowUp')) y += 1;
-    if (this.down('KeyS') || this.down('ArrowDown')) y -= 1;
-    return { x, y };
-  }
+  window.addEventListener('keydown', (event) => {
+    if (!GAME_KEYS.has(event.code)) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    keys.add(event.code);
+    if (event.code === 'Enter' || event.code === 'Space') actions |= ACT.CONFIRM;
+    if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACT.PAUSE;
+    if (event.code === 'KeyE') actions |= ACT.INTERACT;
+    if (event.code === 'KeyF') actions |= ACT.PUNCH;
+    if (event.code === 'KeyH') actions |= ACT.HORN;
+  });
+  window.addEventListener('keyup', (event) => { keys.delete(event.code); });
+  window.addEventListener('blur', () => { keys.clear(); mouseDown = false; dragging = false; });
 
-  endFrame() {
-    this.justPressed.clear();
-    this.mouseClicked = false;
-    this.dragDX = 0;
-    this.dragDY = 0;
-    this.wheelDelta = 0;
-  }
+  canvas.addEventListener('pointerdown', (event) => {
+    mouseDown = true;
+    dragging = true;
+    dragDist = 0;
+    lastX = event.clientX;
+    lastY = event.clientY;
+  });
+  window.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - lastX;
+    const dy = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    dragDist += Math.abs(dx) + Math.abs(dy);
+    lookX += dx;
+    lookY += dy;
+  });
+  window.addEventListener('pointerup', () => {
+    if (mouseDown && dragDist < 6) mouseEdge = true;
+    mouseDown = false;
+    dragging = false;
+  });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    wheel += event.deltaY;
+  }, { passive: false });
+  canvas.addEventListener('contextmenu', (event) => { event.preventDefault(); });
+
+  return {
+    axis() {
+      const x = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+      const y = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+      return { x, y };
+    },
+    run() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); },
+    brake() { return keys.has('Space'); },
+    takeActions() { const taken = actions; actions = 0; return taken; },
+    takeLook() { const d = { x: lookX, y: lookY }; lookX = 0; lookY = 0; return d; },
+    takeWheel() { const w = wheel; wheel = 0; return w; },
+    shootEdge() { const e = mouseEdge; mouseEdge = false; return e; },
+    shootHeld() { return mouseDown; },
+    confirmHeld() { return keys.has('Enter'); },
+  };
 }
