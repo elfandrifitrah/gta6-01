@@ -6,7 +6,6 @@
 // in Indonesia, with the island on the driver's right.
 import * as THREE from 'three';
 import { COLORS, CORRIDOR_X, DRIVING, HALF, ROAD_CENTRES, ROUNDABOUT, TRAFFIC_SPEED } from './config.js';
-import { makeRng } from './random.js';
 import { makePersonModel } from './people.js';
 
 const glassMat = new THREE.MeshStandardMaterial({ color: COLORS.glass, roughness: 0.15, metalness: 0.4 });
