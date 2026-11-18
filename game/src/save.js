@@ -1,6 +1,6 @@
-// Save and load through localStorage. A save holds the story state: cash,
+// Save and load through localStorage. The save holds the story state: cash,
 // finished missions, where Bimo stands, and whether the debt is cleared.
-// Anything unreadable or from another version counts as no save.
+// Anything unreadable or from another version is treated as no save.
 import { SAVE_KEY } from './config.js';
 
 const VERSION = 1;
