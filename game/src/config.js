@@ -1,6 +1,6 @@
-// Jakarta Heat: every tuning number in one place. The city is a 5 by 5 grid
-// of blocks separated by roads; all coordinates are metres, +X east, +Z south.
-// Traffic keeps left, as in Indonesia. The bay lies to the south.
+// Jakarta Heat: one home for every tuning number. The city is a 5 by 5
+// grid of blocks divided by roads. Coordinates are metres, +X east, +Z
+// south. Traffic keeps left, as in Indonesia. The bay lies to the south.
 export const SEED_DEFAULT = 20261117;
 
 // City geometry.
