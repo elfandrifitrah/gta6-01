@@ -1,144 +1,105 @@
-// Jakarta Heat: all tuning numbers in one place. The city is a 5 by 5 grid
-// of blocks separated by roads. Coordinates are metres, +X east, +Z south.
-// Traffic keeps left, as in Indonesia. The bay lies to the south.
-export const SEED_DEFAULT = 20261117;
+// Jakarta Heat: every tuning number, colour and story figure in one place.
 
-// City geometry.
-export const BLOCKS = 5;
-export const BLOCK = 40;
-export const ROAD = 12;
-export const PITCH = BLOCK + ROAD;
-export const EXTENT = BLOCKS * BLOCK + (BLOCKS + 1) * ROAD; // 272
-export const HALF = EXTENT / 2; // 136
-export const SIDEWALK = 2.5;
+export const STEP = 1 / 60;
+export const SAVE_KEY = 'jakarta-heat.save.v1';
 
-// Road centre lines, one per road strip, in world coordinates.
-export const ROAD_CENTRES = [];
-for (let i = 0; i <= BLOCKS; i += 1) ROAD_CENTRES.push(-HALF + ROAD / 2 + i * PITCH);
-
-// The grand corridor: Jl. Sudirman runs north-south at x = 26, with the
-// busway in its median. The grand roundabout sits where it meets Jl. Thamrin.
-export const CORRIDOR_X = 26;
-export const ROUNDABOUT = { x: 26, z: -26, circleRadius: 11, fountainRadius: 4.2 };
-
-// Named places. The mission script and the respawns use these.
-export const PLACES = {
-  bengkel: { x: -104, z: 88, label: 'Bengkel Sumber Jaya' },
-  hotel: { x: 104, z: -78, label: 'Hotel Merdeka' },
-  port: { x: 104, z: 148, label: 'Pelabuhan' },
-  gudang: { x: 104, z: 12, label: 'Gudang Kalong' },
-  chopShop: { x: -104, z: 60, label: 'Bengkel Potong' },
-  police: { x: -52, z: -28, label: 'Kantor Polisi' },
-  hospital: { x: 0, z: 88, label: 'Rumah Sakit' },
-  monument: { x: 0, z: 0, label: 'Tugu Semangat' },
-  roundabout: { x: 26, z: -26, label: 'Bundaran Semangat' },
-  market: { x: 104, z: -104, label: 'Pasar Pagi' },
-  mosque: { x: 52, z: 0, label: 'Masjid Agung' },
-  kotaTua: { x: -104, z: -104, label: 'Kota Tua' },
-  kampung: { x: 104, z: 104, label: 'Kampung Melayu' },
+export const WORLD = {
+  half: 240,
+  gap: 60,
+  roadHalf: 7,
+  avenueHalf: 12,
+  avenueX: 0,
+  waterX: 232,
+  skylineR: 285,
 };
 
-export const PLAYER_START = { x: -96, z: 78, heading: 0 };
+/** The story's money: Bimo starts with $250, owes $5,000, and the four payouts clear it. */
+export const CASH = { start: 250, debt: 5000, payouts: [800, 1200, 1500, 1500] };
 
-// On-foot movement.
-export const ON_FOOT = {
-  walkSpeed: 4.2,
-  runSpeed: 7.2,
-  radius: 0.55,
-  punchRange: 1.9,
-  punchDamage: 30,
-  punchCooldown: 0.45,
+export const MISSION_TITLES = ['Macet Total', 'Kopor Hilang', 'Balap Liar', 'Jebakan di Pelabuhan'];
+
+export const PLAYER = {
+  walk: 7,
+  run: 11.5,
+  radius: 0.7,
+  health: 100,
+  punchDamage: 22,
+  punchRange: 2.6,
+  punchGap: 0.45,
   shotDamage: 34,
-  shotRange: 60,
-  shotCooldown: 0.22,
-  magazine: 12,
-  reloadTime: 1.3,
+  shotRange: 70,
+  fireGap: 0.28,
+  regen: 5,
+  regenDelay: 5,
 };
 
-// Driving.
-export const DRIVING = {
-  accel: 15,
-  brake: 32,
+export const CAR = {
+  accel: 17,
+  brake: 28,
   reverseMax: 9,
-  maxSpeed: 38,
-  drag: 0.55,
-  grip: 2.6,
-  steerMax: 0.55,
-  wheelBase: 2.8,
+  top: 34,
+  grip: 5.5,
+  steer: 2.5,
   radius: 2.3,
-  enterRange: 3.6,
+  offroadDrag: 1.6,
 };
 
-// Wanted level: heat 0..100 maps to stars; crimes add heat, hiding removes it.
-export const WANTED = {
-  starAt: [10, 25, 45, 65, 85],
-  steal: 20,
-  hitPed: 15,
-  killPed: 30,
-  shot: 6,
-  hitCop: 20,
-  decayDelay: 8,
-  decayRate: 4,
-  evadeRadius: 50,
-  evadeTime: 20,
-  policeByStar: [0, 1, 2, 3, 4, 4],
-  bustFootRange: 6,
-  bustFootTime: 2.5,
-  bustCarRange: 5,
-  bustCarTime: 4,
+export const WANTED = { max: 5, bustTime: 3.2, evadeSight: 80, evadeTime: 8, decayTime: 5 };
+
+export const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+
+/** Golden hour over Jakarta: violet sky, ember horizon, warm haze. */
+export const PALETTE = {
+  skyTop: [46, 30, 78],
+  skyMid: [150, 62, 74],
+  horizon: [255, 154, 61],
+  sun: [255, 217, 138],
+  haze: [232, 149, 106],
+  ground: [104, 88, 66],
+  grass: [96, 104, 58],
+  road: [52, 50, 58],
+  roadLine: [214, 190, 130],
+  sidewalk: [141, 130, 112],
+  plaza: [168, 148, 122],
+  port: [110, 108, 104],
+  water: [64, 84, 128],
+  waterHi: [255, 190, 120],
+  lampGlow: [255, 200, 120],
 };
 
-// Traffic and pedestrians.
-export const TRAFFIC_COUNT = 8;
-export const BIKE_COUNT = 12;
-export const BUS_COUNT = 2;
-export const PED_COUNT = 12;
-export const PARKED_COUNT = 6;
-export const TRAFFIC_SPEED = 8.5;
+export const BUILDING_COLORS = [
+  [214, 190, 160], [196, 172, 140], [178, 150, 122], [150, 132, 116],
+  [188, 164, 132], [160, 140, 128], [140, 148, 160], [206, 178, 142],
+  [172, 128, 104], [148, 118, 96], [190, 186, 172], [156, 134, 110],
+];
 
-// Story: Bimo owes Bu Ratna $5,000. Four jobs pay it off.
-export const DEBT_TOTAL = 5000;
-export const START_CASH = 250;
-export const BUST_PENALTY = 0.15;
-export const WASTE_PENALTY = 0.15;
+export const TOWER_COLORS = [
+  [120, 128, 148], [104, 116, 140], [136, 128, 118], [96, 108, 128],
+  [150, 140, 124], [112, 100, 92],
+];
 
-export const SAVE_KEY = 'jakarta-heat-save-v1';
+export const SHIRT_COLORS = [
+  [200, 70, 60], [60, 120, 190], [220, 180, 60], [70, 160, 90],
+  [180, 90, 150], [230, 230, 220], [60, 60, 70], [220, 120, 50],
+  [90, 170, 170], [150, 60, 60], [80, 100, 160], [190, 200, 90],
+];
 
-// Palette: tropical golden hour. Warm haze, deep blue-glass towers,
-// terracotta roofs, red-and-white flags.
-export const COLORS = {
-  skyTop: 0x2e6fc4,
-  skyHorizon: 0xffb36b,
-  fog: 0xf0c096,
-  ground: 0x8d8a7a,
-  concrete: 0x9a968c,
-  water: 0x2e6f8e,
-  asphalt: 0x3a3d43,
-  busway: 0x8a4a3c,
-  sidewalk: 0xb5afa2,
-  building: [0xd8cfc0, 0xc9b8a3, 0xb7c0c9, 0xd9b48f, 0xa8b5a0, 0xc4a9a9, 0xe0d9c8, 0x9fb2c8],
-  glassTower: [0x5a7fa8, 0x4a6f96, 0x6a8fb8, 0x3e5f86, 0x7a9cc4],
-  roof: 0x6b6259,
-  roofTerracotta: 0xa85a38,
-  roofMetal: [0x8a8f94, 0x7a6a55, 0x5f7a5a, 0x946a4a],
-  carPaint: [0xd8d8d8, 0x333a42, 0xc0c4c8, 0x2e5f8a, 0x8a2f3d, 0x3a3a3a, 0xd9a441, 0x4d7c5f],
-  suvPaint: [0xe8e8e8, 0x2a2d33, 0x5a6a7a, 0x7a3a2e],
-  policePaint: 0x1f3a6e,
-  taxiPaint: 0x7ab8c9,
-  angkotPaint: 0x2e8a6e,
-  bajajOrange: 0xe87f2e,
-  bajajBlue: 0x2e5f9e,
-  busRed: 0xc23a2e,
-  busWhite: 0xf0f0ea,
-  glass: 0x1d2733,
-  tyre: 0x1a1a1a,
-  treeTrunk: 0x6d4c33,
-  treeLeaf: [0x3f7a3a, 0x4e8a42, 0x2f6d33, 0x5d8a3a],
-  palmLeaf: 0x3e7a34,
-  skin: [0xc98d5f, 0xa86a42, 0x8a5a36, 0xe0ac7e, 0x6e4526],
-  shirt: [0xc94f43, 0x3f6d9e, 0xe0c53f, 0x5f9e6b, 0x8a5fa8, 0xe8e8e8, 0x3a3f4a],
-  pants: [0x2e3a4d, 0x4a3a2e, 0x5a5a5a, 0x27331f],
-  ojekGreen: 0x1f8a4c,
-  guardBlue: 0x2a3a5e,
-  hijab: [0xc94f6e, 0x3f6d9e, 0xe0c53f, 0x5f9e6b, 0x8a5fa8, 0x7a4a2e, 0xe8e8e8, 0x2a2a2e],
-};
+export const CAR_COLORS = [
+  [200, 200, 205], [40, 42, 48], [150, 30, 30], [30, 60, 130],
+  [180, 180, 170], [90, 100, 110], [200, 140, 40], [60, 90, 70],
+];
+
+export const SIGN_TEXTS = [
+  ['WARUNG', 'nasi goreng · kopi'],
+  ['KOPI', 'kopi tubruk'],
+  ['BAKSO', 'bakso sapi'],
+  ['TOKO', 'kelontong 24 jam'],
+  ['NASI PADANG', 'rendang · ayam pop'],
+  ['BENGKEL', 'las · tambal ban'],
+  ['APOTEK', 'obat · vitamin'],
+  ['SATE', 'sate ayam madura'],
+  ['MARTABAK', 'manis · telur'],
+  ['GADO-GADO', 'sayur · lontong'],
+  ['ES TEH', 'manis dingin'],
+  ['FOTOCOPY', 'print · jilid'],
+];
