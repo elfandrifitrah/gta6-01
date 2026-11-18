@@ -1,7 +1,7 @@
-// All sound is synthesized with WebAudio: no audio files, no network. Engine
-// hum, siren, gunfire, impacts and a small sequenced music loop. Everything
-// is guarded: before the first user gesture the context stays suspended and
-// every call is a no-op, so headless runs and muted runs never throw.
+// All sound is synthesized with WebAudio: no audio files, no network.
+// Engine hum, siren, gunfire, impacts, and a small sequenced music loop.
+// Everything is guarded: before the first user gesture the context stays
+// suspended and every call is a no-op, so headless and muted runs never throw.
 export class AudioSys {
   constructor() {
     this.ctx = null;
