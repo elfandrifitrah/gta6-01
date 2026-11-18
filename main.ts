@@ -1,10 +1,10 @@
 // Jakarta Heat: the entry program for gta6-01 (Node 22+, standard library
-// only). The game is this directory's game/ folder — plain static files a
-// desktop browser loads offline: game/index.html, its ES modules, and a
+// only). The game is this directory's game/ folder: plain static files a
+// desktop browser loads offline, game/index.html, its ES modules, and a
 // locally vendored three.js build. No CDN, no network request. This program
 // copies game/ and screenshots/ beside this file into the output directory
 // and writes dossier.json, the summary the judge reads, using the vendored
-// make.fun library.
+// make.fun library. The dossier cap shapes how much source it carries.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
