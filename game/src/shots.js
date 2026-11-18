@@ -1,6 +1,6 @@
 // Screenshot staging behind ?shot=<name>. Each shot drives the real game
-// into an interesting state through the same APIs a player uses — entering
-// a car, raising heat, starting a mission — then frames a fixed camera.
+// into an interesting state through the same APIs a player uses: entering
+// a car, raising heat, starting a mission, then framing a fixed camera.
 // Nothing is faked: the traffic, police, enemies and HUD are all live, and
 // the capture script waits for window.__shotReady before shooting the frame.
 import { Car } from './vehicles.js';
