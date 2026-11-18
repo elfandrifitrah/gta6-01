@@ -1,8 +1,8 @@
 # Jakarta Heat — gta6-01
 
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/elfandrifitrah/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/elfandrifitrah/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/elfandrifitrah/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/elfandrifitrah/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 Jakarta Heat is an original open-world crime game set in a fictionalized Jakarta, 2026. Bimo owes the fixer Bu Ratna $5,000. Four jobs pay the debt: a fare through macet total, a stolen briefcase, a hot coupe, and an ambush at the port. The city is explorable on foot and by car, with left-hand traffic, motorbike flow, bajaj three-wheelers, articulated buses on a dedicated busway, a wanted level with chasing police, on-foot combat, a HUD with minimap, and a save system. All art is procedural low-poly geometry, all sound is synthesized with WebAudio, and every place, person, vehicle and brand is invented. No real logos, trademarks, or landmark copies.
 
