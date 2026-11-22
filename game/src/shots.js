@@ -1,101 +1,45 @@
-// The screenshot scenes behind ?shot=start|play|end|vista. Each one stages a
-// real game state through the same rules the player meets — the title over a
-// living avenue, a police chase mid-mission, the paid-off ending, and a wide
-// view of the monument plaza — then the runner paints it and sets
-// window.__shotReady. The seed fixes the city; the staging fixes the moment.
+// Screenshot staging behind ?shot=start|play|end|vista. Written in this session.
+import { CFG } from './config.js';
 
-import { TICK } from './config.js';
-import { stageAt } from './missions.js';
-import { addHeat } from './wanted.js';
-import { clamp } from './vec.js';
-
-function driveToward(S) {
-  // Autopilot: full throttle, steer at the marker, ease off in tight turns.
-  const player = S.player;
-  const marker = S.marker;
-  if (!marker || !player.car) return { x: 0, y: 0 };
-  const want = Math.atan2(marker.y - player.y, marker.x - player.x);
-  let diff = want - player.heading;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  return { x: clamp(diff * 2.2, -1, 1), y: 1 };
-}
-
-function fakeInput(S) {
-  return {
-    axes: () => driveToward(S),
-    held: { brake: false, sprint: false },
-    takeActions: () => 0,
-    mouse: { clientX: 0, clientY: 0 },
-  };
-}
-
-export function stageShot(name, world) {
-  const S = world.state;
-  world.reset();
-  const input = fakeInput(S);
-
-  if (name === 'play') {
-    // Mid-chase on Sudirman: delivering the package, three stars, patrols closing.
-    stageAt(S, 0, 1);
-    S.player.car.x = 1300;
-    S.player.car.y = 1420;
-    S.player.car.heading = -Math.PI / 2;
-    S.player.x = 1300;
-    S.player.y = 1420;
-    S.camera.x = 1300;
-    S.camera.y = 1420;
-    addHeat(S, 300);
-    // Drive until the drop is half a screen ahead: mid-avenue, patrols closing.
-    for (let i = 0; i < 8 / TICK; i += 1) {
-      world.step(TICK, input, 0);
-      const d = Math.hypot(S.player.x - S.marker.x, S.player.y - S.marker.y);
-      if (d < 520) break;
+export function stageShot(name, G) {
+  const p = CFG.places;
+  if (name === 'start') {
+    // Wanted chase on Jl. Sudirman, four stars.
+    G.screen = 'play';
+    G.wanted = 4;
+    G.player.x = -2; G.player.z = -30; G.player.angle = 0;
+    const car = G.vehicles.spawnMissionCar(-2, -26, 0xd32f2f, 'sedan');
+    car.health = 100; car.driven = true; car.speed = 12;
+    G.playerCar = car; G.player.mesh.visible = false;
+    for (let i = 0; i < 3; i++) {
+      const v = G.vehicles.spawnMissionCar(-8 + i * 6, -16 + i * 8, 0x1a237e, 'police');
+      v.health = 100; v.driven = true; // staged static pursuit cars, clear of the collision pass
     }
-    S.showBanner('Macet Total', 'Deliver the package to the Thamrin drop', 3.4);
-    S.banner.t = 0.5; // past the pop-in, so the banner reads in the still frame
-    return { screen: 'play' };
+    G.shotCam = null;
+    G.announce('Wanted: 4 stars. Lose the police.');
+    return;
   }
-
+  if (name === 'play') {
+    // Kopor Hilang combat at the warehouse yard.
+    G.screen = 'play';
+    G.missions.M.index = 1;
+    G.missions.start();
+    G.player.x = p.warehouse[0] - 8; G.player.z = p.warehouse[1] + 10; G.player.angle = Math.PI;
+    G.ammo = 12;
+    G.announce('Kopor Hilang: defeat the rivals.');
+    return;
+  }
   if (name === 'end') {
-    // The paid-off ending at Bu Ratna's warung, dusk light, story complete.
-    S.cash = 5250;
-    S.cashShown = 5250;
-    S.mission.index = 4;
-    S.mission.active = false;
-    S.objective = 'Free roam — Jakarta is yours.';
-    S.marker = null;
-    S.stats.playTime = 754;
-    S.player.x = 1210;
-    S.player.y = 950;
-    S.camera.x = 1210;
-    S.camera.y = 950;
-    for (let i = 0; i < 4 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
-    return { screen: 'done' };
+    // Title screen over the monument square.
+    G.screen = 'title';
+    G.player.x = p.monument[0]; G.player.z = p.monument[1] + 18; G.player.angle = Math.PI;
+    G.shotCam = { x: -20, y: 7, z: 30, lookX: -20, lookY: 9, lookZ: -20, yaw: 0 };
+    return;
   }
-
-  if (name === 'vista') {
-    // Wide view of the monument plaza with the HUD on: the city at a glance.
-    // At zoom 0.55 the frame spans 2327x1309 world units, so the camera
-    // sits at the city centre: any further west and the frame shows the
-    // void past the world's edge as a dark band.
-    S.player.x = 760;
-    S.player.y = 900;
-    S.camera.x = 1300;
-    S.camera.y = 850;
-    S.camera.zoomTarget = 0.55;
-    S.camera.zoom = 0.55;
-    for (let i = 0; i < 8 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
-    S.camera.x = 1300;
-    S.camera.y = 850;
-    return { screen: 'play' };
-  }
-
-  // Start: the title over the avenue as traffic rolls past the warung.
-  S.camera.x = 1080;
-  S.camera.y = 760;
-  for (let i = 0; i < 6 / TICK; i += 1) world.step(TICK, input, 0, 'backdrop');
-  S.camera.x = 1080;
-  S.camera.y = 760;
-  return { screen: 'title' };
+  // vista: monument, plaza, flags, corridor, busway, towers, bay, live HUD and minimap.
+  G.screen = 'play';
+  G.wanted = 1;
+  G.player.x = p.monument[0]; G.player.z = p.monument[1] + 16; G.player.angle = 0;
+  G.shotCam = { x: -48, y: 48, z: 26, lookX: 5, lookY: 0, lookZ: -75, yaw: 0 };
+  G.announce('Jakarta, 2026. Golden hour.');
 }
