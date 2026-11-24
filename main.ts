@@ -4,7 +4,7 @@
 // with the vendored make.fun library. Serve locally with `node serve.ts`, then open
 // http://localhost:8080. Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -14,8 +14,10 @@ const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 // Start from a clean output directory: a previous run's stale files would
 // otherwise be copied into the dossier and counted against the entry.
-rmSync(out, { recursive: true, force: true });
+// Remove only the contents, never the directory itself: in the grader the
+// output directory is a bind mount, and removing a mountpoint fails.
 mkdirSync(out, { recursive: true });
+for (const entry of readdirSync(out)) rmSync(join(out, entry), { recursive: true, force: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
