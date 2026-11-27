@@ -39,6 +39,7 @@ export function createHud(G, renderer) {
       if (G.marker) obj += '  ' + Math.round(Math.hypot(G.player.x - G.marker.x, G.player.z - G.marker.z)) + 'm';
     } else obj = 'Next job: ' + CFG.missions[m.index].name + ' at ' + CFG.missions[m.index].start;
     if (m.index === 0 && m.active && m.timer > 0) obj += '  ' + Math.ceil(m.timer) + 's';
+    if (m.index === 2 && m.active && G.missions.gtCar) obj += '  GT ' + Math.max(0, Math.round(G.missions.gtCar.health)) + '%';
     els.objective.textContent = obj;
     els.objective.style.borderLeftColor = (m.index === 0 && m.active && m.timer > 0 && m.timer < 20) ? '#ff5252' : '#ffd54f';
     els.msg.textContent = G.message || '';

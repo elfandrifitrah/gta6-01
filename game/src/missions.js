@@ -18,6 +18,8 @@ export function createMissions(scene, G, deps) {
   let passenger = null;
   let passengerRode = false;
   let passengerStand = null;
+  let jam = [];
+  let barkT = 9;
   const cards = [
     ['Macet Total', 'Drive Pak Haji to the port'],
     ['Kopor Hilang', 'Drop the rivals, then the briefcase'],
@@ -68,6 +70,8 @@ export function createMissions(scene, G, deps) {
   function setTarget(x, z, label) {
     M.target = [x, z]; M.label = label;
     beacon.position.set(x, 0, z); beacon.visible = true;
+    const gate = label.startsWith('Checkpoint') || label.startsWith('Chop');
+    ring.scale.setScalar(gate ? 3.4 : 1);
     G.marker = { x, z, label };
   }
   function clearTarget() { M.target = null; beacon.visible = false; G.marker = null; }
@@ -77,10 +81,15 @@ export function createMissions(scene, G, deps) {
     itemMesh.position.set(x, 0.6, z); scene.add(itemMesh);
   }
   function removeItem() { if (itemMesh) { scene.remove(itemMesh); itemMesh = null; } }
+  function clearJam() {
+    for (const v of jam) vehicles.removeVehicle(v);
+    jam = [];
+  }
   function cleanup() {
     people.clearEnemies();
     removeItem();
     dropPassenger();
+    clearJam();
     if (gtCar) { vehicles.removeVehicle(gtCar); gtCar = null; }
     clearTarget();
   }
@@ -97,6 +106,13 @@ export function createMissions(scene, G, deps) {
       M.stage = 'drive'; M.timer = CFG.missionTime1;
       seatPassenger();
       placePassenger();
+      barkT = 9;
+      const spots = [
+        [40, -8, Math.PI, 0xd32f2f], [40, -22, Math.PI, 0x1565c0],
+        [16, -40, Math.PI / 2, 0xf5f5f5], [2, -40, -Math.PI / 2, 0xef6c00], [-14, -40, Math.PI / 2, 0x222222],
+        [0, -56, Math.PI, 0x9e9e9e], [0, -72, Math.PI, 0x2e7d32],
+      ];
+      jam = spots.map(([x, z, angle, color]) => vehicles.spawnJam(x, z, angle, color));
       setTarget(p.port[0], p.port[1], 'Port: deliver Pak Haji');
       G.announce('Macet Total: drive Pak Haji to the port. 150 seconds.');
     } else if (M.index === 1) {
@@ -160,6 +176,14 @@ export function createMissions(scene, G, deps) {
       if (M.timer <= 0) { fail('timeout'); return; }
       if (G.playerCar && near(p.port[0], p.port[1], 9)) { complete(); return; }
       if (G.playerCar && G.playerCar.health !== undefined && G.playerCar.health <= 0) { fail('mission car wrecked'); return; }
+      barkT -= dt;
+      if (barkT <= 0) {
+        barkT = 12;
+        if (!G.playerCar) G.announce('Pak Haji: A car, Bimo. The port is south.');
+        else if (Math.abs(G.playerCar.speed) < 3) G.announce('Pak Haji: This is a jam, not a rest stop.');
+        else if ((G.playerCar.health || 100) < 55) G.announce('Pak Haji: My suit. Ease off.');
+        else if (M.timer < 35) G.announce('Pak Haji: We are going to be late.');
+      }
     } else if (M.index === 1) {
       if (M.stage === 'fight') {
         if (people.enemies.length === 0) {
@@ -188,6 +212,8 @@ export function createMissions(scene, G, deps) {
         if (G.playerCar === gtCar && near(cp[0], cp[1], 10)) {
           M.cp++;
           audio.cash();
+          G.shake = Math.max(G.shake || 0, 0.18);
+          G.announce('Checkpoint ' + M.cp + ' of 3.');
           if (M.cp >= 3) {
             M.stage = 'deliver';
             setTarget(p.chopShop[0], p.chopShop[1], 'Chop shop: deliver the GT');

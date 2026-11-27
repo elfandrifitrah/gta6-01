@@ -71,8 +71,8 @@ export function createPeopleSystem(scene, G) {
     if (rng() > 0.5) spawnPed(road + 5, along); else spawnPed(along, road + 5);
   }
   function spawnEnemy(x, z, label) {
-    const mesh = makePersonMesh({ rng, shirt: 0x222222, legs: 0x111111 });
-    const e = { mesh, x, z, angle: 0, health: CFG.enemyHealth, speed: 3.4, attackT: 0, stun: 0, label: label || 'rival', dead: false };
+    const mesh = makePersonMesh({ rng, shirt: label === 'ambusher' ? 0x4e342e : 0xb71c1c, legs: 0x111111 });
+    const e = { mesh, x, z, angle: 0, health: CFG.enemyHealth, speed: 3.2, attackT: 0, shootT: 1.15, stun: 0, label: label || 'rival', dead: false };
     mesh.position.set(x, 0, z); group.add(mesh); enemies.push(e);
     return e;
   }
@@ -111,12 +111,29 @@ export function createPeopleSystem(scene, G) {
       const d = Math.hypot(dx, dz) || 1;
       e.angle = Math.atan2(dx, dz);
       e.stun -= dt;
-      if (d > 1.7 && e.stun <= 0) { e.x += (dx / d) * e.speed * dt; e.z += (dz / d) * e.speed * dt; }
+      if (e.stun <= 0) {
+        if (d > 8) { e.x += (dx / d) * e.speed * dt; e.z += (dz / d) * e.speed * dt; }
+        else if (d > 3.4) { e.x += (-dz / d) * e.speed * 0.65 * dt; e.z += (dx / d) * e.speed * 0.65 * dt; }
+      }
       e.attackT -= dt;
-      if (d < 1.9 && e.attackT <= 0) {
+      if (d < 1.9 && e.attackT <= 0 && G.screen === 'play') {
         e.attackT = 0.9;
         G.damagePlayer(6);
         audio.punch();
+      }
+      if (G.screen === 'play' && d > 4 && d < 22 && e.stun <= 0) {
+        e.shootT -= dt;
+        if (e.shootT <= 0) {
+          e.shootT = 1.45;
+          if (G.tracer) G.tracer(e.x, 1.4, e.z, p.x, 1.2, p.z, 0xff8a65);
+          audio.shot();
+          const hit = d < 12 ? 0.85 : 0.5;
+          if (Math.random() < hit) {
+            if (G.playerCar) G.playerCar.health -= 4;
+            G.damagePlayer(G.playerCar ? 2 : 5);
+            G.shake = Math.max(G.shake || 0, 0.22);
+          }
+        }
       }
       e.mesh.position.set(e.x, 0, e.z);
       e.mesh.rotation.y = e.angle;

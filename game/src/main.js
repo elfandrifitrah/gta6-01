@@ -28,6 +28,7 @@ const G = {
   cash: CFG.startCash, health: CFG.playerHealth, ammo: CFG.pistolAmmo,
   wanted: 0, wantedIdle: 0, timeSinceCrime: 99, bustMeter: 0,
   shake: 0, hurtFlash: 0, hitMark: 0, reloadT: 0, prompt: '',
+  loseT: 0, loseSaid: false,
   card: { title: '', sub: '', t: 0 },
   player: { x: -60, z: 26, angle: 0, speed: 0, mesh: null },
   playerCar: null, marker: null, message: '', msgT: 0,
@@ -313,6 +314,7 @@ function combat(dt) {
       }
       const reach = best ? bd : 36;
       G.tracer(G.player.x, 1.45, G.player.z, G.player.x + Math.sin(yaw) * reach, 1.35, G.player.z + Math.cos(yaw) * reach, 0xfff3c4);
+      people.scarePeds(G.player.x, G.player.z);
       if (best) {
         const dx = best.x - G.player.x, dz = best.z - G.player.z;
         const d = Math.hypot(dx, dz) || 1;
@@ -404,11 +406,27 @@ function step(dt) {
   missions.update(dt);
   vehicles.update(dt);
   people.update(dt);
-  // Wanted decay and bust.
+  // Wanted decay and bust. Stars fall faster once every cop is out of sight.
+  let copNear = false;
+  for (const v of vehicles.police) {
+    if (Math.hypot(v.x - G.player.x, v.z - G.player.z) < 45) { copNear = true; break; }
+  }
   G.timeSinceCrime += dt;
-  if (G.wanted > 0 && G.timeSinceCrime > CFG.wantedDecayIdle) {
-    G.wantedIdle += dt;
-    if (G.wantedIdle >= CFG.wantedDecayStep) { G.wanted--; G.wantedIdle = 0; }
+  if (G.wanted > 0 && !copNear && G.timeSinceCrime > 6) {
+    G.loseT += dt;
+    if (G.loseT > 2.5 && !G.loseSaid) { G.loseSaid = true; G.announce('Losing them. Stay clear.'); }
+  } else {
+    G.loseT = 0;
+    if (copNear) G.loseSaid = false;
+  }
+  const cooling = G.wanted > 0 && !copNear && G.timeSinceCrime > 8;
+  if (G.wanted > 0 && (G.timeSinceCrime > CFG.wantedDecayIdle || cooling)) {
+    G.wantedIdle += dt * (cooling ? 2.4 : 1);
+    if (G.wantedIdle >= CFG.wantedDecayStep) {
+      G.wanted--;
+      G.wantedIdle = 0;
+      G.announce(G.wanted > 0 ? G.wanted + ' star' + (G.wanted === 1 ? '' : 's') + ' left.' : 'Heat gone.');
+    }
   }
   if (G.bustMeter >= CFG.bustTime) G.busted();
   const m = missions.M;

@@ -164,7 +164,21 @@ export function createVehicleSystem(scene, G) {
     if (police.length === 0) G.bustMeter = Math.max(0, G.bustMeter - dt);
   }
   function update(dt) {
-    for (const v of traffic) { if (!v.driven) driveAlong(v, dt, v.speed); }
+    for (const v of traffic) {
+      if (v.driven) continue;
+      if (v.hold) {
+        v.holdT = (v.holdT || 0) + dt;
+        const crawl = Math.max(0.25, 1.3 + Math.sin(v.holdT * 0.85 + v.weave) * 1.2);
+        const nx = v.x + Math.sin(v.angle) * crawl * dt;
+        const nz = v.z + Math.cos(v.angle) * crawl * dt;
+        if (Math.hypot(nx - v.homeX, nz - v.homeZ) < 7) { v.x = nx; v.z = nz; }
+        else v.angle += Math.PI;
+        v.mesh.position.set(v.x, 0, v.z);
+        v.mesh.rotation.y = v.angle;
+        continue;
+      }
+      driveAlong(v, dt, v.speed);
+    }
     for (const v of bikes) {
       if (v.driven) continue;
       v.weave += dt * 2;
@@ -177,6 +191,7 @@ export function createVehicleSystem(scene, G) {
     const pc = G.playerCar;
     if (pc) {
       for (const v of [...traffic, ...bikes]) {
+        if (v.hold) continue;
         const d = dist2(v.x, v.z, pc.x, pc.z);
         if (d < 36) { v.x += Math.sin(v.angle) * -0.5 * dt * 10; }
       }
@@ -203,5 +218,16 @@ export function createVehicleSystem(scene, G) {
     mesh.position.set(x, 0, z); group.add(mesh); traffic.push(v);
     return v;
   }
-  return { traffic, bikes, police, update, nearestCar, removeVehicle, spawnMissionCar, makeCarMesh, makeBikeMesh, group };
+  function spawnJam(x, z, angle, color) {
+    const v = spawnMissionCar(x, z, color, 'sedan');
+    v.hold = true;
+    v.angle = angle;
+    v.homeX = x;
+    v.homeZ = z;
+    v.weave = (x + z) * 0.17;
+    v.speed = 2;
+    v.mesh.rotation.y = angle;
+    return v;
+  }
+  return { traffic, bikes, police, update, nearestCar, removeVehicle, spawnMissionCar, spawnJam, makeCarMesh, makeBikeMesh, group };
 }
