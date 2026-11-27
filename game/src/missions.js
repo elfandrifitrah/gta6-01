@@ -1,6 +1,7 @@
 // Missions: the four-job story state machine. Written in this session.
 import * as THREE from 'three';
 import { CFG, CHECKPOINTS_M3 } from './config.js';
+import { mulberry32 } from './random.js';
 import { audio } from './audio.js';
 
 export function createMissions(scene, G, deps) {
@@ -14,6 +15,45 @@ export function createMissions(scene, G, deps) {
   beacon.visible = false; scene.add(beacon);
   let itemMesh = null;
   let gtCar = null;
+  let passenger = null;
+  let passengerRode = false;
+  let passengerStand = null;
+  const cards = [
+    ['Macet Total', 'Drive Pak Haji to the port'],
+    ['Kopor Hilang', 'Drop the rivals, then the briefcase'],
+    ['Balap Liar', 'Steal the yellow Garuda GT'],
+    ['Jebakan di Pelabuhan', 'Survive the ambush, then get home'],
+  ];
+  function dropPassenger() {
+    passengerRode = false;
+    passengerStand = null;
+    if (!passenger) return;
+    scene.remove(passenger);
+    passenger = null;
+  }
+  function seatPassenger() {
+    if (passenger) return;
+    passenger = people.makePersonMesh({ rng: mulberry32(7), shirt: 0xf7f3ea, legs: 0x1a237e });
+    scene.add(passenger);
+  }
+  function placePassenger() {
+    if (!passenger) return;
+    const v = G.playerCar;
+    if (v) {
+      passengerRode = true;
+      const lx = -0.62, lz = 0.15;
+      const s = Math.sin(v.angle), c = Math.cos(v.angle);
+      passenger.position.set(v.x + lx * c + lz * s, 0.95, v.z - lx * s + lz * c);
+      passenger.rotation.y = v.angle;
+      passengerStand = { x: v.x + 2.4, z: v.z + 1.2 };
+    } else if (!passengerRode) {
+      const h = CFG.places.hotel;
+      passenger.position.set(h[0] + 5, 0, h[1] - 7);
+      passenger.rotation.y = Math.PI;
+    } else if (passengerStand) {
+      passenger.position.set(passengerStand.x, 0, passengerStand.z);
+    }
+  }
   const M = {
     index: 0, // next mission, 0..3; 4 means story done
     active: false,
@@ -40,6 +80,7 @@ export function createMissions(scene, G, deps) {
   function cleanup() {
     people.clearEnemies();
     removeItem();
+    dropPassenger();
     if (gtCar) { vehicles.removeVehicle(gtCar); gtCar = null; }
     clearTarget();
   }
@@ -50,9 +91,12 @@ export function createMissions(scene, G, deps) {
   function start() {
     if (M.active || M.index >= 4) return false;
     M.active = true; M.failed = null;
+    if (G.cardShow) G.cardShow(cards[M.index][0], cards[M.index][1]);
     const p = CFG.places;
     if (M.index === 0) {
       M.stage = 'drive'; M.timer = CFG.missionTime1;
+      seatPassenger();
+      placePassenger();
       setTarget(p.port[0], p.port[1], 'Port: deliver Pak Haji');
       G.announce('Macet Total: drive Pak Haji to the port. 150 seconds.');
     } else if (M.index === 1) {
@@ -79,6 +123,7 @@ export function createMissions(scene, G, deps) {
     const name = CFG.missions[M.index].name;
     cleanup();
     G.cash += pay;
+    if (G.cardShow) G.cardShow(name + ' complete', 'Paid $' + pay);
     M.index++;
     M.active = false; M.stage = 'idle';
     audio.cash();
@@ -110,6 +155,7 @@ export function createMissions(scene, G, deps) {
     if (!M.active) return;
     const p = CFG.places;
     if (M.index === 0) {
+      placePassenger();
       M.timer -= dt;
       if (M.timer <= 0) { fail('timeout'); return; }
       if (G.playerCar && near(p.port[0], p.port[1], 9)) { complete(); return; }

@@ -24,6 +24,20 @@
   .panel button { pointer-events: auto; margin: 10px 6px 0; padding: 12px 28px; font-size: 18px; font-weight: 700; background: #ffd54f; border: none; cursor: pointer; }
   .panel button:hover { background: #ffca28; }
   .keys { font-size: 14px; opacity: .9; }
+  #stars.hot { animation: starPulse 0.55s ease-in-out infinite; }
+  @keyframes starPulse { 50% { opacity: 0.35; } }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 0 1px #000; display: none; }
+  #crosshair::after { content: ''; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; background: #fff; transform: translate(-50%, -50%); }
+  #crosshair.hit { border-color: #ff5252; }
+  #crosshair.hit::after { background: #ff5252; }
+  #prompt { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); background: rgba(0,0,0,.72); padding: 8px 14px 8px 8px; font-size: 16px; font-weight: 700; border-radius: 4px; display: none; }
+  #prompt kbd { background: #ffd54f; color: #1a1200; padding: 2px 8px; margin-right: 10px; border-radius: 3px; }
+  #waypoint { position: absolute; width: 0; height: 0; margin: -16px 0 0 -9px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid #ffd54f; filter: drop-shadow(0 1px 2px #000); display: none; }
+  #waypoint.edge { border-bottom-color: #ff8a65; }
+  #banner { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 3px 10px #000; display: none; }
+  #bannerName { display: block; font-size: 34px; font-weight: 800; color: #ffd54f; letter-spacing: 1px; }
+  #bannerSub { display: block; margin-top: 4px; font-size: 16px; }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(160,0,0,.72) 100%); opacity: 0; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -42,13 +56,18 @@
   </div>
   <div id="objective"></div>
   <div id="msg"></div>
+  <div id="crosshair"></div>
+  <div id="waypoint"></div>
+  <div id="prompt"></div>
+  <div id="banner"><span id="bannerName"></span><span id="bannerSub"></span></div>
+  <div id="vignette"></div>
   <canvas id="minimap" width="150" height="150"></canvas>
   <div id="bottombar">Bimo | Jakarta, 2026</div>
 </div>
 <div id="title" class="panel">
   <h1>JAKARTA HEAT</h1>
   <p>You are Bimo. You owe fixer Bu Ratna $5,000. Four jobs clear the debt.</p>
-  <p class="keys">WASD / arrows move and drive &middot; Mouse shoots &middot; F punches &middot; R reloads &middot; E enters cars and starts jobs &middot; Space handbrake &middot; Shift sprint &middot; Right-drag or Q orbits camera &middot; Wheel zooms &middot; P / Esc pauses &middot; M mutes</p>
+  <p class="keys">WASD / arrows move and drive &middot; Mouse shoots &middot; F punches &middot; R reloads &middot; E enters cars, starts jobs, eats at a warung &middot; Space handbrake &middot; H horn &middot; Shift sprint &middot; Right-drag or Q orbits camera &middot; Wheel zooms &middot; P / Esc pauses &middot; M mutes</p>
   <div>
     <button id="startBtn">Start</button>
     <button id="continueBtn">Continue</button>

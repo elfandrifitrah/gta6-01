@@ -110,7 +110,7 @@ export function createVehicleSystem(scene, G) {
     node = [clamp(node[0], -80, 80), clamp(node[1], -80, 80)];
     if (node[0] === ROUNDABOUT_NODE[0] && node[1] === ROUNDABOUT_NODE[1]) node = [0, -40];
     const mesh = makePoliceMesh();
-    const v = { kind: 'police', mesh, x: node[0], z: node[1], angle: 0, speed: 17, path: null, pathIdx: 0, repath: 0, lightT: 0, lane: 2, weave: 0 };
+    const v = { kind: 'police', mesh, x: node[0], z: node[1], angle: 0, speed: 17, path: null, pathIdx: 0, repath: 0, lightT: 0, lane: 2, weave: 0, shootT: 0.8 };
     mesh.position.set(v.x, 0, v.z); group.add(mesh); police.push(v);
     return v;
   }
@@ -149,6 +149,17 @@ export function createVehicleSystem(scene, G) {
       v.mesh.position.set(v.x, 0, v.z);
       v.mesh.rotation.y = v.angle;
       if (pd < 5) G.bustMeter += dt;
+      else if (G.screen === 'play' && G.wanted >= 2 && pd < 32) {
+        v.shootT = (v.shootT || 0) - dt;
+        if (v.shootT <= 0) {
+          v.shootT = Math.max(0.7, 1.5 - G.wanted * 0.12);
+          if (G.tracer) G.tracer(v.x, 1.5, v.z, p.x, 1.2, p.z, 0xffe082);
+          audio.shot();
+          G.shake = Math.max(G.shake || 0, 0.28);
+          if (G.playerCar) G.playerCar.health -= 6;
+          G.damagePlayer(G.playerCar ? 3 : 6);
+        }
+      }
     }
     if (police.length === 0) G.bustMeter = Math.max(0, G.bustMeter - dt);
   }

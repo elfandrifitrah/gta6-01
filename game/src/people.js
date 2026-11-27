@@ -72,7 +72,7 @@ export function createPeopleSystem(scene, G) {
   }
   function spawnEnemy(x, z, label) {
     const mesh = makePersonMesh({ rng, shirt: 0x222222, legs: 0x111111 });
-    const e = { mesh, x, z, angle: 0, health: CFG.enemyHealth, speed: 3.4, attackT: 0, label: label || 'rival', dead: false };
+    const e = { mesh, x, z, angle: 0, health: CFG.enemyHealth, speed: 3.4, attackT: 0, stun: 0, label: label || 'rival', dead: false };
     mesh.position.set(x, 0, z); group.add(mesh); enemies.push(e);
     return e;
   }
@@ -110,7 +110,8 @@ export function createPeopleSystem(scene, G) {
       const dx = p.x - e.x, dz = p.z - e.z;
       const d = Math.hypot(dx, dz) || 1;
       e.angle = Math.atan2(dx, dz);
-      if (d > 1.7) { e.x += (dx / d) * e.speed * dt; e.z += (dz / d) * e.speed * dt; }
+      e.stun -= dt;
+      if (d > 1.7 && e.stun <= 0) { e.x += (dx / d) * e.speed * dt; e.z += (dz / d) * e.speed * dt; }
       e.attackT -= dt;
       if (d < 1.9 && e.attackT <= 0) {
         e.attackT = 0.9;

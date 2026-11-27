@@ -34,8 +34,9 @@ No build step. No network requests. Three.js r160 is vendored under `game/vendor
 - Mouse: shoot (click)
 - F: punch
 - R: reload
-- E: enter cars, start jobs, retry
-- Space: handbrake
+- E: enter cars, start jobs, retry, eat at a warung
+- Space: handbrake (hold to slide)
+- H: horn
 - Shift: sprint
 - Right-drag or Q: orbit camera
 - Mouse wheel: zoom
@@ -48,8 +49,11 @@ No build step. No network requests. Three.js r160 is vendored under `game/vendor
 - Traffic cars, motorbikes, buses, MRT train, pedestrians
 - Steal and drive cars and bikes, including police cars
 - Wanted stars, police chase with road-grid routing, bust and wasted respawns
-- On-foot combat: punches and pistol
-- HUD with health, cash, debt, wanted stars, ammo, speed, mission tracker, and minimap
+- On-foot combat: punches and pistol, with tracers, hit confirmation, and a short reload
+- Driving with grip, handbrake slides, body roll, and a speed-sensitive camera
+- Police return fire from two stars up. Sirens run while you are wanted
+- Warungs sell a meal that heals you
+- HUD with health, cash, debt, wanted stars, ammo, speed, mission tracker, waypoint, prompts, and minimap
 - Title screen, pause, localStorage save with Continue
 - Synthesized sound effects and music loop
 - Landmarks: Tugu Semangat monument plaza, Sudirman glass-tower corridor with busway, Bundaran Semangat roundabout, Kota Tua shophouses, kampung quarters, Masjid Agung, port, toll road, coastal flyover, MRT line
