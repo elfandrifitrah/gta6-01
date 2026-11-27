@@ -10,7 +10,7 @@ Jakarta Heat is an open-world crime game set in fictional Jakarta, 2026. It was 
 
 You are Bimo. You owe fixer Bu Ratna $5,000. Four jobs clear the debt:
 
-1. **Macet Total** ($800): drive Pak Haji from Hotel Merdeka to the port within 150 seconds.
+1. **Macet Total** ($800): drive Pak Haji from Hotel Merdeka to the port within 150 seconds, through a crawling jam.
 2. **Kopor Hilang** ($1,200): defeat three rivals at the warehouse yard, take the briefcase to Bengkel Sumber Jaya.
 3. **Balap Liar** ($1,500): steal the yellow Garuda GT coupe at the hotel, hit three checkpoints, deliver it to the chop shop. Half pay if it arrives badly damaged.
 4. **Jebakan di Pelabuhan** ($1,500): survive a two-wave ambush at the port, take the money bag home.
@@ -34,8 +34,9 @@ No build step. No network requests. Three.js r160 is vendored under `game/vendor
 - Mouse: shoot (click)
 - F: punch
 - R: reload
-- E: enter cars, start jobs, retry
-- Space: handbrake
+- E: enter cars, start jobs, retry, eat at a warung
+- Space: handbrake (hold to slide)
+- H: horn
 - Shift: sprint
 - Right-drag or Q: orbit camera
 - Mouse wheel: zoom
@@ -48,8 +49,13 @@ No build step. No network requests. Three.js r160 is vendored under `game/vendor
 - Traffic cars, motorbikes, buses, MRT train, pedestrians
 - Steal and drive cars and bikes, including police cars
 - Wanted stars, police chase with road-grid routing, bust and wasted respawns
-- On-foot combat: punches and pistol
-- HUD with health, cash, debt, wanted stars, ammo, speed, mission tracker, and minimap
+- On-foot combat: punches and pistol, with tracers, hit confirmation, and a short reload
+- Driving with grip, handbrake slides, body roll, and a speed-sensitive camera
+- Police return fire from two stars up. Sirens run while you are wanted. Stars cool faster once you break line of sight
+- Rivals and ambushers shoot as well as punch
+- Macet Total clogs the road south with a crawling jam. Pak Haji complains from the passenger seat
+- Warungs sell a meal that heals you
+- HUD with health, cash, debt, wanted stars, ammo, speed, mission tracker, waypoint, prompts, and minimap
 - Title screen, pause, localStorage save with Continue
 - Synthesized sound effects and music loop
 - Landmarks: Tugu Semangat monument plaza, Sudirman glass-tower corridor with busway, Bundaran Semangat roundabout, Kota Tua shophouses, kampung quarters, Masjid Agung, port, toll road, coastal flyover, MRT line

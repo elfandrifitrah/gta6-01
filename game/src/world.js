@@ -254,7 +254,7 @@ export function buildWorld(scene) {
     signPlane(scene, s, x, 3.2, z, 0, 7, 1.4, '#0b5fa5', '#ffffff');
   });
   CFG.warungs.forEach((w, i) => {
-    const x = -70 + i * 45, z = 70;
+    const [x, z] = CFG.warungSpots[i];
     box(scene, 5, 2.5, 4, x, 1.25, z, 0x8d6e63);
     box(scene, 5.5, 0.3, 4.5, x, 2.7, z, pick(rng, [0xd81b60, 0x00897b, 0xf9a825]));
     signPlane(scene, w.toUpperCase(), x, 3.6, z + 2.3, 0, 8, 1.6, '#333333', '#ffe082');
